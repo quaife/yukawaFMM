@@ -29,7 +29,8 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 c
 c
 c
-	subroutine yukq2d(ier,rky,ndigits,nlams,xs,zw,w,lw,lused)
+c	subroutine yukq2d(ier,rky,ndigits,nlams,xs,zw,w,lw,lused)
+	subroutine yukq2d(ier,rky,nlams,xs,zw,w,lw,lused)
 	implicit real *8 (a-h,o-z)
 c
 c Purpose:
@@ -95,6 +96,7 @@ c
 c
 	data eye/(0.0d0,1.0d0)/
 c
+        ndigits = 12
 	ier=0
 	rk7=rky*eye
 c

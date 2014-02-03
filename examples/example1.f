@@ -43,6 +43,8 @@ c  errorxy = l2 error of xy-derivative of potential between direct
 c           and fmm
 c  erroryy = l2 error of yy-derivative of potential between direct
 c           and fmm
+c  iflagDirect = 1 if doing N-body directly.  0 otherwise
+c  iflagFMM = 1 if doing N-body with FMM.  0 otherwise
 
 
       implicit none
@@ -76,8 +78,11 @@ c     For now can only do 2
       real *4 t0_direct,t1_direct
       real *4 t0_fmm,t1_fmm
       integer stat,ierror
+      integer iflagDirect,iflagFMM 
 
-      layers = 3
+      iflagDirect = 1
+      iflagFMM = 1
+      layers = 1
 c     Number of layer potentials to compute
 
       npts = 2**12
@@ -116,19 +121,23 @@ c     Set up the domain, density, and parameter beta
       call initData(npts,dom,density,beta)
 
 c     Compute the potential and gradient directly
-      t0_direct = ETIME(timeep)
-      call potExact(npts,layers,dom,density,beta,potE,potEx,potEy,
-     $    potExx,potExy,potEyy)
-      t1_direct = ETIME(timeep)
+      if (iFlagDirect .eq. 1) then
+        t0_direct = ETIME(timeep)
+        call particleExact(npts,layers,dom,density,beta,
+     1      potE,potEx,potEy,potExx,potExy,potEyy)
+        t1_direct = ETIME(timeep)
+      endif
 
       
-c     Maximum number of points per box
-      maxptsperbox = 10 
-c     Compute the potential and gradient using the FMM
-      t0_fmm = ETIME(timeep)
-      call potFMM(npts,maxptsperbox,layers,dom,density,beta,
-     $   potF,potFx,potFy,potFxx,potFxy,potFyy)
-      t1_fmm = ETIME(timeep)
+      if (iFlagDirect .eq. 1) then
+c       Maximum number of points per box
+        maxptsperbox = 10 
+c       Compute the potential and gradient using the FMM
+        t0_fmm = ETIME(timeep)
+        call particleFMM(npts,maxptsperbox,layers,dom,density,beta,
+     $     potF,potFx,potFy,potFxx,potFxy,potFyy)
+        t1_fmm = ETIME(timeep)
+      endif
 
 
       open(unit=1,file='../output/pot.dat')
@@ -276,8 +285,8 @@ c     Assign a density function and target/source locations
       end
       
 c*******************************************************************
-      subroutine potExact(npts,layers,dom,density,beta,potE,potEx,potEy,
-     $      potExx,potExy,potEyy)
+      subroutine particleExact(npts,layers,dom,density,beta,
+     1    potE,potEx,potEy,potExx,potExy,potEyy)
 c  ****** DESCRIPTION:
 c  build the potential using the N^2 direct algorithm.  Also computed
 c  the requested number of derivatives

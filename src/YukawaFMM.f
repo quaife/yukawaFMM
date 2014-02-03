@@ -1,4 +1,4 @@
-      subroutine potFMM(npts,maxptsperbox,layers,dom,density,beta,
+      subroutine particleFMM(npts,maxptsperbox,layers,dom,density,beta,
      $    pot,potx,poty,potxx,potxy,potyy)
 c     ****** DESCRPTION:
 c     Compute the Yukawa potential and its gradient at all locations
@@ -226,18 +226,19 @@ c     neighbouring boxes that are not well-seperated, etc...
 
 
 c     Start allocating memory for FMM
-      call yfmmstart4(beta,work,maxwrk,iwork,maxwrk,
-     $    nlev,levelbox,iparentbox,ichildbox,
-     $    icolbox,irowbox,nboxes,nblevel,iboxlev,
-     $    istartlev,fb,numptsbox,permute,fpt,
-     $    list1,nlist1,list3,nlist3,
-     $    npts,layers,dom,density,pot,potx,poty,
-     $    potxx,potxy,potyy)
+      call startParticleFMM(
+     1    beta,work,maxwrk,iwork,maxwrk,
+     2    nlev,levelbox,iparentbox,ichildbox,
+     3    icolbox,irowbox,nboxes,nblevel,iboxlev,
+     4    istartlev,fb,numptsbox,permute,fpt,
+     5    list1,nlist1,list3,nlist3,
+     6    npts,layers,dom,density,pot,potx,poty,
+     7    potxx,potxy,potyy)
 
 
 
 
- 1020 format(A,F7.4,A)
+ 1020 format(A,ES8.2,A)
 
       return
       end
@@ -245,15 +246,15 @@ c     Start allocating memory for FMM
 
 
 
-
 c**********************************************************************
-      subroutine yfmmstart4(beta,work,lenw,iwork,ilen,
-     $     nlev,levelbox,iparentbox,ichildbox,
-     $     icolbox,irowbox,nboxes,nblevel,iboxlev,
-     $     istartlev,fb,numptsbox,permute,fpt,
-     $     list1,nlist1,list3,nlist3,
-     $     npts,layers,dom,q,pot,potx,poty,
-     $     potxx,potxy,potyy)
+      subroutine startParticleFMM(
+     1     beta,work,lenw,iwork,ilen,
+     2     nlev,levelbox,iparentbox,ichildbox,
+     3     icolbox,irowbox,nboxes,nblevel,iboxlev,
+     4     istartlev,fb,numptsbox,permute,fpt,
+     5     list1,nlist1,list3,nlist3,
+     6     npts,layers,dom,q,pot,potx,poty,
+     7     potxx,potxy,potyy)
       implicit none
 
       integer *4 levelbox(nboxes),iparentbox(nboxes)
@@ -285,8 +286,6 @@ c     Number of layer potentials to compute
 c     Local variables
       integer *4 nterms,iprec
       integer *4 nnodes
-c     TODO: nnodes seems to do nothing.  Not sure why Jingfang
-c     had it in the code
       integer *4 nnodesmax 
       parameter (nnodesmax=50)
       integer *4 mpole,mxnodes,mcolleag,mchoose,mcomp
@@ -347,17 +346,18 @@ c     carve up the real workspace
          stop
       endif
 
-c     Call the cod that does the bulk of the FMM code
-      call yadapfmm4(beta,work(ibetascal),work(iscale),
-     $     12,nlev,work(mxnodes),work(mzs),work(mcomp),
-     $     work(mcomp2),41,nnodes,npts,layers,dom,q,
-     $     pot,potx,poty,potxx,potxy,potyy,
-     $     work(mpole),work(locexp),work(iexpn),work(iexps),
-     $     work(iexpe),work(iexpw),work(mchoose),
-     $     levelbox,iparentbox,ichildbox,
-     $     icolbox,irowbox,iwork(mcolleag),nboxes,
-     $     nblevel,iboxlev,istartlev,fb,numptsbox,permute,fpt,
-     $     list1,nlist1,list3,nlist3)
+c     Call the code that does the bulk of the FMM code
+      call evalParticleFMM(
+     1     beta,work(ibetascal),work(iscale),
+     2     12,nlev,work(mxnodes),work(mzs),work(mcomp),
+     3     work(mcomp2),41,nnodes,npts,layers,dom,q,
+     4     pot,potx,poty,potxx,potxy,potyy,
+     5     work(mpole),work(locexp),work(iexpn),work(iexps),
+     6     work(iexpe),work(iexpw),work(mchoose),
+     7     levelbox,iparentbox,ichildbox,
+     8     icolbox,irowbox,iwork(mcolleag),nboxes,
+     9     nblevel,iboxlev,istartlev,fb,numptsbox,permute,fpt,
+     1     list1,nlist1,list3,nlist3)
 
 
 
@@ -368,15 +368,17 @@ c     Call the cod that does the bulk of the FMM code
 
 
 c**********************************************************************
-      subroutine yadapfmm4(beta,betascal,scale,
-     $    iprec,nlev,xnodes,zs,comp,
-     $    comp2,nterms,nnodes,npts,layers,dom,q,
-     $    pot,potx,poty,potxx,potxy,potyy,
-     $    mpole,locexp,expn,exps,expe,expw,
-     $    c,levelbox,iparentbox,ichildbox,
-     $    icolbox,irowbox,icolleagbox,nboxes,
-     $    nblevel,iboxlev,istartlev,fb,numptsbox,permute,fpt,
-     $    list1,nlist1,list3,nlist3)
+      subroutine evalParticleFMM(
+     1    beta,betascal,scale,
+     2    iprec,nlev,xnodes,zs,comp,
+     3    comp2,nterms,nnodes,npts,layers,dom,q,
+     4    pot,potx,poty,potxx,potxy,potyy,
+     5    mpole,locexp,expn,exps,
+     6    expe,expw,c,
+     7    levelbox,iparentbox,ichildbox,
+     8    icolbox,irowbox,icolleagbox,nboxes,
+     9    nblevel,iboxlev,istartlev,fb,numptsbox,permute,fpt,
+     1    list1,nlist1,list3,nlist3)
       implicit none
 
       integer *4 nnodesmax
@@ -792,7 +794,7 @@ c     Report timings for different components of the FMM
 
 
 
- 1020 format(A,F6.4,A)
+ 1020 format(A,ES8.2,A)
 
       return
       end
@@ -1089,6 +1091,247 @@ c         in which childless boxes
       return
       end
 
+
+c**********************************************************************
+      subroutine subdivide(iparbox,iparentbox,ichildbox,icolleagbox,
+     1         nboxes,irowbox,icolbox,levelbox,nlev,
+     2         istartlev, nblevel, iboxlev,itemparray)
+c**********************************************************************
+c     the following subroutine is designed to divide up a childless
+c     box into four children.
+c     the children are placed in correct order (clockwise starting
+c     from the upper left corner) so there is no need to 'shuffle'
+c     the child order later on. in the periodic case, the colleagues
+c     must be obtained by looking at the potential colleague numbers
+c     and their row and column and seeing if they lie outside of
+c     the domain. if they do it must be readjusted to account for the
+c     periodicity.
+c
+c   input:
+c     iparbox : the box being divided
+c     iparentbox : the parent of each box
+c     ichildbox : the four children of each box
+c     icolleagbox : the colleagues of a given box
+c     nboxes : the total number of boxes
+c     irowbox : the row of each box
+c     icolbox : the column of each box
+c     levelbox : an array determining the level of each box
+c     nlev : the finest level
+c     istartlev : the pointer to where each level begins in the
+c               iboxlev array
+c     nblevel : the total number of boxes per level
+c     iboxlev : the array in which the boxes are arranged
+c     itemparray : just a dummy array
+c
+c   output:
+c     nboxes and ichildbox : are altered to
+c            reflect the addition of new boxes
+c
+c**********************************************************************
+c
+      implicit none
+c
+c-----global variables
+c
+      integer *4 nlev, nboxes
+      integer *4 iparentbox(nboxes+4), ichildbox(4,nboxes+4)
+      integer *4 icolbox(nboxes+4), irowbox(nboxes+4)
+      integer *4 levelbox(nboxes+4)
+      integer *4 iparbox
+      integer *4 nblevel(0:nlev),iboxlev(nboxes+4),istartlev(0:nlev)
+      integer *4 icolleagbox(9,nboxes+4)
+c
+c-----local variables
+c
+      integer *4  level, ibox, itemparray(1)
+      integer *4  icolumn, irow, i, j,l
+      integer *4  icntr, jcntr, isister
+      integer *4  icoltemp, icoltest
+      integer *4  irowtemp, irowtest
+      integer *4  partemp, colleague, nside, ilev, itest
+c
+c-----let's initialize the array itemparray to zero:
+c
+      do i = 1, nboxes + 4
+        itemparray(i) = 0
+      end do
+c
+c-----level, icolumn, and irow refer to the level, column,
+c     and row of the parent box, respectively.
+c
+      level   = levelbox(iparbox)
+      icolumn = icolbox(iparbox)
+      irow    = irowbox(iparbox)
+c
+c-----here are the new boxes placed in the
+c     correct positions.  they are all childless.
+c     there columns and rows are determined from
+c     the parents columns and rows.  the level is
+c     obviously one level finer than the parent.
+c
+      ibox = nboxes + 1
+      levelbox(ibox) = level + 1
+      iparentbox(ibox) = iparbox
+      ichildbox(1,ibox) = -1
+      ichildbox(2,ibox) = -1
+      ichildbox(3,ibox) = -1
+      ichildbox(4,ibox) = -1
+      icolbox(ibox) = 2*(icolumn-1) + 1
+      irowbox(ibox) = 2*(irow-1) + 1
+c
+      ibox = nboxes + 2
+      levelbox(ibox) = level + 1
+      iparentbox(ibox) = iparbox
+      ichildbox(1,ibox) = -1
+      ichildbox(2,ibox) = -1
+      ichildbox(3,ibox) = -1
+      ichildbox(4,ibox) = -1
+      icolbox(ibox) = 2*(icolumn-1) + 2
+      irowbox(ibox) = 2*(irow-1) + 1
+c
+      ibox = nboxes + 3
+      levelbox(ibox) = level + 1
+      iparentbox(ibox) = iparbox
+      ichildbox(1,ibox) = -1
+      ichildbox(2,ibox) = -1
+      ichildbox(3,ibox) = -1
+      ichildbox(4,ibox) = -1
+      icolbox(ibox) = 2*(icolumn-1) + 1
+      irowbox(ibox) = 2*(irow-1) + 2
+c
+      ibox = nboxes + 4
+      levelbox(ibox) = level + 1
+      iparentbox(ibox) = iparbox
+      ichildbox(1,ibox) = -1
+      ichildbox(2,ibox) = -1
+      ichildbox(3,ibox) = -1
+      ichildbox(4,ibox) = -1
+      icolbox(ibox) = 2*(icolumn-1) + 2
+      irowbox(ibox) = 2*(irow-1) + 2
+c
+      ichildbox(1,iparbox) = nboxes + 3
+      ichildbox(2,iparbox) = nboxes + 4
+      ichildbox(3,iparbox) = nboxes + 2
+      ichildbox(4,iparbox) = nboxes + 1
+c
+c-----set up a temporary array to store the old one in:
+c
+      do i = 1, nboxes
+        itemparray(i) = iboxlev(i)
+      end do
+c
+c-----now let's rearrange the ladder structure:
+c
+      nblevel(level + 1) = nblevel(level + 1) + 4
+c
+      iboxlev(istartlev(level+2))   = nboxes + 1
+      iboxlev(istartlev(level+2)+1) = nboxes + 2
+      iboxlev(istartlev(level+2)+2) = nboxes + 3
+      iboxlev(istartlev(level+2)+3) = nboxes + 4
+c
+      do i = istartlev(level+2) + 4, nboxes + 4
+        iboxlev(i) = itemparray(i - 4)
+      end do
+c
+      do i = level + 2, nlev
+        istartlev(i) = istartlev(i) + 4
+      end do
+      nboxes = nboxes + 4
+c
+c------now let's go through the process of reforming any
+c      neccessary colleagues.  for each of the child boxes
+c      that we just formed, all we need to do is scan through
+c      the boxes that are children of the above parent boxes
+c      colleagues and test the column and row numbers.  we can
+c      also take advantage of the fact that for every one of
+c      the newly formed boxes colleagues, that box will list
+c      the newly formed box as one of its colleagues.
+c      the colleague numbers can be found easily if we think
+c      of a 'reflection.'  colleague 1 and 9 are opposites,
+c      3 and 7 etc.
+c      first do the free space case:
+c
+       do 200 i = 1, 4
+         if(ichildbox(1,iparbox) .lt. 0)goto 200
+         ibox = ichildbox(i,iparbox)
+         icolleagbox(5,ibox) = ibox
+         do j = 1, 4
+           icolleagbox(j,ibox) = -1
+         end do
+         do j = 6, 9
+           icolleagbox(j,ibox) = -1
+         end do
+c
+         partemp = iparentbox(ibox)
+c
+c--------irowtemp and icoltemp denote the
+c        row and column of the test box.
+c
+         irowtemp = irowbox(ibox)
+         icoltemp = icolbox(ibox)
+c
+         do 100 jcntr = 1, 9
+c
+c----------colleague denotes the colleague of the parent box.
+c
+           colleague = icolleagbox(jcntr,partemp)
+c
+c----------if the colleague doesn't exist
+c          or is childless, skip it:
+c
+           if (colleague .lt. 0)goto 100
+           if (ichildbox(1,colleague) .lt. 0)goto 100
+c
+c----------otherwise scan the four children:
+c
+           do icntr = 1, 4
+             j = ichildbox(icntr,colleague)
+c
+c------------irowtest and icoltest denote the row and column of
+c            the box being compared to the test box.
+c
+             irowtest = irowbox(j)
+             icoltest = icolbox(j)
+c
+             if(irowtemp .eq. irowtest+1)then
+               if(icoltemp .eq. icoltest+1)then
+                 icolleagbox(1,ibox) = j
+                 icolleagbox(9,j) = ibox
+               elseif(icoltemp .eq. icoltest)then
+                 icolleagbox(2,ibox) = j
+                 icolleagbox(8,j) = ibox
+               elseif(icoltemp .eq. icoltest-1)then
+                 icolleagbox(3,ibox) = j
+                 icolleagbox(7,j) = ibox
+               endif
+             elseif(irowtemp .eq. irowtest)then
+               if(icoltemp .eq. icoltest+1)then
+                 icolleagbox(4,ibox) = j
+                 icolleagbox(6,j) = ibox
+               elseif(icoltemp .eq. icoltest-1)then
+                 icolleagbox(6,ibox) = j
+                 icolleagbox(4,j) = ibox
+               endif
+             elseif(irowtemp .eq. irowtest-1)then
+               if(icoltemp .eq. icoltest+1)then
+                 icolleagbox(7,ibox) = j
+                 icolleagbox(3,j) = ibox
+               elseif(icoltemp .eq. icoltest)then
+                 icolleagbox(8,ibox) = j
+                 icolleagbox(2,j) = ibox
+               elseif(icoltemp .eq. icoltest-1)then
+                 icolleagbox(9,ibox) = j
+                 icolleagbox(1,j) = ibox
+               endif
+             endif
+           end do
+100      continue
+200   continue
+
+
+
+      return
+      end
 
 
 
@@ -3126,9 +3369,6 @@ c     level is the level of ibox
 c
 c     icolleagbox, irowbox, and icolbox define the tree
 c
-c     iperiod denotes whether or not the case is periodic or free space
-c
-c
 c     output:
 c
 c     the naming convention for the lists is is as follows:
@@ -4973,7 +5213,9 @@ c
           xnodes(1)=0.0d0
           zweights(1)=0.0d0
         else
-          call yukq2d(ier, betabox, iprec, nnodes, xnodes,zweights,
+c          call yukq2d(ier, betabox, iprec, nnodes, xnodes,zweights,
+c     1                work, lwork, lused)
+          call yukq2d(ier, betabox, nnodes, xnodes,zweights,
      1                work, lwork, lused)
         endif
 c

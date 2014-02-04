@@ -4708,6 +4708,9 @@ c
 c
       return
       end
+
+
+
 c**********************************************************************
       subroutine polar_convert(z,r,theta)
 c     Convert a complex number z to polar form
@@ -4750,6 +4753,200 @@ c     z=r*exp(eye*theta)
 
       return
       end
+
+
+c*****************************************************************
+      subroutine yformmp_coef(index,nterms,scale,betascal,levnow,wint)
+c*****************************************************************
+c     this subroutine precomputs the coefficients for forming
+c     the multipole expansion for the necessary levels.
+c     now everything is based on the table of table concepts.
+c
+c     on input :
+c        index : the index which shows if this is the first time
+c                this subroutine is excuted. if index=0, then first
+c                time, otherwise, not the first time.
+c        nterms : the number of terms in the multipole expansion.
+c        scale : the length of the box for different levels.
+c        betascale : the scale factor for beta.
+c        levnow : the current level, a number from 0 to maxlevel.
+c
+c     on output :
+c        wint : the coefficients for forming the multipole expansion,
+c               it is the translation matrix from the polynomial
+c               coefficients to multipole coefficients.
+c
+c     the current program is based on table of tables, it uses computed
+c       chebyshev expansion of these translation operators as a
+c       function of beta*h (see the notes), and extropolate at
+c       other points using the 20 term chebyshev polynomials.
+c
+c     local parameters:
+c       ndeg : the degree of the polynomial approximation.  (3 for 4th order)
+c       maxlevel : the max level of the adaptive mesh structure. (17)
+c       ntermmax : the max number of multipole expansions. (43/4+1=11)
+c
+c*******************************************************************
+c
+      implicit none
+c
+      integer  ndeg, nterms, maxlevel,maxbeta
+      parameter (ndeg=3,maxlevel=17,maxbeta=6)
+c
+c-----global variables.
+c
+      integer  index, levnow
+      real *8  rjudge(1:maxbeta,0:maxlevel)
+      real *8 scale(0:maxlevel), betascal(0:maxlevel)
+      real *8 wint(nterms/4+1,10)
+      real *8 wintsave(1:maxbeta,0:maxlevel,11,10)
+      real *8 www(1:4,1:21,0:10,10)
+      save rjudge,wintsave,www
+c
+c-----local variables.
+c
+      integer  k,l,i,ind,nlegen,ndiff,indbeta
+      real *8 rkc,xhalf,x(0:2*ndeg)
+      real *8 dcsevl,rktemp,cheby(1:21)
+c
+      nlegen=5
+      ndiff= nlegen*(nlegen+1)/2
+c
+      if (index .eq. 0) then
+c
+c-------the first time this subroutine is excuted.
+c
+        call formmp_cheby_tab(www)
+        do i=0, maxlevel-1
+          do k=1,maxbeta-1
+            rjudge(k,i)=-1
+          enddo
+        enddo
+        rjudge(1,maxlevel)=-1.0d0
+        rjudge(2,maxlevel)=-1.0d0
+        rjudge(3,maxlevel)=-1.0d0
+        rjudge(4,maxlevel)=-1.0d0
+        rjudge(5,maxlevel)=-1.0d0
+        rjudge(6,maxlevel)=-1.0d0
+        return
+      endif
+c
+c-----now check if current current beta, and current level's coefficients
+c     is already computed.
+c
+      if (dabs(rjudge(1,maxlevel)-betascal(0)).le.1.0e-14) then
+        indbeta=1
+      elseif (dabs(rjudge(2,maxlevel)-betascal(0)).le.1.0e-14) then
+        indbeta=2
+      elseif (dabs(rjudge(3,maxlevel)-betascal(0)).le.1.0e-14) then
+        indbeta=3
+      elseif (dabs(rjudge(4,maxlevel)-betascal(0)).le.1.0e-14) then
+        indbeta=4
+      elseif (dabs(rjudge(5,maxlevel)-betascal(0)).le.1.0e-14) then
+        indbeta=5
+      elseif (dabs(rjudge(6,maxlevel)-betascal(0)).le.1.0e-14) then
+        indbeta=6
+      elseif (rjudge(1,maxlevel) .le. 0) then
+        indbeta=1
+        rjudge(1,maxlevel)=betascal(0)
+      elseif (rjudge(2,maxlevel) .le. 0) then
+        indbeta=2
+        rjudge(2,maxlevel)=betascal(0)
+      elseif (rjudge(3,maxlevel) .le. 0) then
+        indbeta=3
+        rjudge(3,maxlevel)=betascal(0)
+      elseif (rjudge(4,maxlevel) .le. 0) then
+        indbeta=4
+        rjudge(4,maxlevel)=betascal(0)
+      elseif (rjudge(5,maxlevel) .le. 0) then
+        indbeta=5
+        rjudge(5,maxlevel)=betascal(0)
+      elseif (rjudge(6,maxlevel) .le. 0) then
+        indbeta=6
+        rjudge(6,maxlevel)=betascal(0)
+      else
+        print *, 'too many beta, stop!', (rjudge(i,maxlevel),i=1,6)
+        print *, 'difference', ((rjudge(i,maxlevel)-betascal(0)),i=1,6)
+        stop
+      endif
+      
+c
+c-----now check if current level's coefficients is already computed.
+c
+      if (rjudge(indbeta,levnow).gt.0) then
+        do l=1, nterms/4+1
+          do i=1,10
+            wint(l,i)=wintsave(indbeta,levnow, l,i)
+          enddo
+        enddo
+c
+      else
+        rjudge(indbeta,levnow)=1
+        xhalf=scale(levnow)/2.0d0
+        x(0)=xhalf*xhalf
+        do i=1,3
+          x(i)=x(i-1)*xhalf
+        enddo
+c
+c-------rkc is the constant before i_l( rkc*rk(k))
+c
+        rkc=betascal(0)*scale(levnow)
+        do ind=1,nterms/4+1
+          do k=1,10
+            if (rkc.le. 8.0d0) then
+              rktemp=(2.0d0*rkc-8.0d0)/8.0d0
+              do i=1,21
+                cheby(i)=www(1,i,ind-1,k)
+              enddo
+            elseif (rkc.le. 16.0d0) then
+              rktemp=(2.0d0*rkc-24.0d0)/8.0d0
+              do i=1,21
+                cheby(i)=www(2,i,ind-1,k)
+              enddo
+            elseif (rkc.le. 24.0d0) then
+              rktemp=(2.0d0*rkc-40.0d0)/8.0d0
+              do i=1,21
+                cheby(i)=www(3,i,ind-1,k)
+              enddo
+            elseif (rkc.le. 32.0d0) then
+              rktemp=(2.0d0*rkc-56.0d0)/8.0d0
+              do i=1,21
+                cheby(i)=www(4,i,ind-1,k)
+              enddo
+            else
+              rktemp=0.0d0
+              do i=1,21
+                cheby(i)=0.0d0
+              enddo
+            endif
+            cheby(1)=2.0d0*cheby(1)
+c
+            wint(ind,k)=dcsevl(rktemp,cheby,21)
+          enddo
+c
+          wint(ind,1 )=x(0)*wint(ind,1)
+          wint(ind,2 )=x(2)*wint(ind,2)
+          wint(ind,3 )=x(1)*wint(ind,3 )
+          wint(ind,4 )=x(3)*wint(ind,4 )
+          wint(ind,5 )=x(3)*wint(ind,5 )
+          wint(ind,6 )=x(2)*wint(ind,6 )
+          wint(ind,7 )=x(2)*wint(ind,7 )
+          wint(ind,8 )=x(1)*wint(ind,8 )
+          wint(ind,9 )=x(3)*wint(ind,9 )
+          wint(ind,10)=x(3)*wint(ind,10)
+        enddo
+c
+        do l=1, nterms/4+1
+          do i=1, 10
+            wintsave(indbeta,levnow,l,i)=wint(l,i)
+          enddo
+        enddo
+      endif
+c
+      return
+      end
+
+
 
 c**********************************************************************
       subroutine ympmp_coef(index,nterms,scale,betascal,levnow,c)
@@ -4807,7 +5004,6 @@ c
 c
 c-------the first time this subroutine is called, initialize.
 c
-
         pi=4.0d0*datan(1.0d0)
         fact(0)=1.0d0
         do i=1, 2*ntermsmax
@@ -5684,12 +5880,14 @@ c
       implicit none
       integer  nlev,nterms,iprec,nnodes
       real *8 betascal(0:10),scale(0:10)
+      real *8 wint(5000)
       real *8 c(5000),xnodes(5000),comp(5000)
       real *8 zs(5000)
 c 
       nlev=3
       nterms=21
 c
+      call yformmp_coef(0,nterms,scale,betascal,nlev,wint)
       call ympmp_coef(0,nterms,scale,betascal,nlev,c)
       call ymppw_coef(0,nterms,iprec,nnodes,scale,betascal,nlev,
      1               xnodes,comp)
@@ -5698,6 +5896,10 @@ c
 
       return
       end
+
+
+
+
 
 
 c**********************************************************************
@@ -5709,3 +5911,2468 @@ c**********************************************************************
 
       return
       end
+
+
+
+c***************************************************************
+*deck dcsevl
+      double precision function dcsevl (x, cs, n)
+c***begin prologue  dcsevl
+c***purpose  evaluate a chebyshev series.
+c***library   slatec (fnlib)
+c***category  c3a2
+c***type      double precision (csevl-s, dcsevl-d)
+c***keywords  chebyshev series, fnlib, special functions
+c***author  fullerton, w., (lanl)
+c***description
+c
+c  evaluate the n-term chebyshev series cs at x.  adapted from
+c  a method presented in the paper by broucke referenced below.
+c
+c       input arguments --
+c  x    value at which the series is to be evaluated.
+c  cs   array of n terms of a chebyshev series.  in evaluating
+c       cs, only half the first coefficient is summed.
+c  n    number of terms in array cs.
+c
+c***references  r. broucke, ten subroutines for the manipulation of
+c                 chebyshev series, algorithm 446, communications of
+c                 the a.c.m. 16, (1973) pp. 254-256.
+c               l. fox and i. b. parker, chebyshev polynomials in
+c                 numerical analysis, oxford university press, 1968,
+c                 page 56.
+c***routines called  d1mach, xermsg
+c***revision history  (yymmdd)
+c   770401  date written
+c   890831  modified array declarations.  (wrb)
+c   890831  revision date from version 3.2
+c   891214  prologue converted to version 4.0 format.  (bab)
+c   900315  calls to xerror changed to calls to xermsg.  (thj)
+c   900329  prologued revised extensively and code rewritten to allow
+c           x to be slightly outside interval (-1,+1).  (wrb)
+c   920501  reformatted the references section.  (wrb)
+c***end prologue  dcsevl
+      double precision b0, b1, b2, cs(*), onepl, twox, x, d1mach
+      logical first
+      save first, onepl
+      data first /.true./
+c***first executable statement  dcsevl
+      if (first) onepl = 1.0d0 + d1mach(4)
+      first = .false.
+      if (n .lt. 1) call xermsg ('slatec', 'dcsevl',
+     +   'number of terms .le. 0', 2, 2)
+      if (n .gt. 1000) call xermsg ('slatec', 'dcsevl',
+     +   'number of terms .gt. 1000', 3, 2)
+      if (dabs(x-1.0d0) .le. 1.0e-15) then
+          x=1.0d0
+      elseif (dabs(x+1.0d0) .le. 1.0e-15 ) then
+          x=-1.0d0
+      endif
+c
+      if (abs(x) .gt. onepl) call xermsg ('slatec', 'dcsevl',
+     +   'x outside the interval (-1,+1)', 1, 1)
+c
+      b1 = 0.0d0
+      b0 = 0.0d0
+      twox = 2.0d0*x
+      do 10 i = 1,n
+         b2 = b1
+         b1 = b0
+         ni = n + 1 - i
+         b0 = twox*b1 - b2 + cs(ni)
+   10 continue
+c
+      dcsevl = 0.5d0*(b0-b2)
+c
+      return
+      end
+*deck d1mach
+      double precision function d1mach (i)
+c***begin prologue  d1mach
+c***purpose  return floating point machine dependent constants.
+c***library   slatec
+c***category  r1
+c***type      double precision (r1mach-s, d1mach-d)
+c***keywords  machine constants
+c***author  fox, p. a., (bell labs)
+c           hall, a. d., (bell labs)
+c           schryer, n. l., (bell labs)
+c***description
+c
+c   d1mach can be used to obtain machine-dependent parameters for the
+c   local machine environment.  it is a function subprogram with one
+c   (input) argument, and can be referenced as follows:
+c
+c        d = d1mach(i)
+c
+c   where i=1,...,5.  the (output) value of d above is determined by
+c   the (input) value of i.  the results for various values of i are
+c   discussed below.
+c
+c   d1mach( 1) = b**(emin-1), the smallest positive magnitude.
+c   d1mach( 2) = b**emax*(1 - b**(-t)), the largest magnitude.
+c   d1mach( 3) = b**(-t), the smallest relative spacing.
+c   d1mach( 4) = b**(1-t), the largest relative spacing.
+c   d1mach( 5) = log10(b)
+c
+c   assume double precision numbers are represented in the t-digit,
+c   base-b form
+c
+c              sign (b**e)*( (x(1)/b) + ... + (x(t)/b**t) )
+c
+c   where 0 .le. x(i) .lt. b for i=1,...,t, 0 .lt. x(1), and
+c   emin .le. e .le. emax.
+c
+c   the values of b, t, emin and emax are provided in i1mach as
+c   follows:
+c   i1mach(10) = b, the base.
+c   i1mach(14) = t, the number of base-b digits.
+c   i1mach(15) = emin, the smallest exponent e.
+c   i1mach(16) = emax, the largest exponent e.
+c
+c   to alter this function for a particular environment, the desired
+c   set of data statements should be activated by removing the c from
+c   column 1.  also, the values of d1mach(1) - d1mach(4) should be
+c   checked for consistency with the local operating system.
+c
+c***references  p. a. fox, a. d. hall and n. l. schryer, framework for
+c                 a portable library, acm transactions on mathematical
+c                 software 4, 2 (june 1978), pp. 177-188.
+c***routines called  xermsg
+c***revision history  (yymmdd)
+c   750101  date written
+c   890213  revision date from version 3.2
+c   891214  prologue converted to version 4.0 format.  (bab)
+c   900315  calls to xerror changed to calls to xermsg.  (thj)
+c   900618  added dec risc constants.  (wrb)
+c   900723  added ibm rs 6000 constants.  (wrb)
+c   900911  added sun 386i constants.  (wrb)
+c   910710  added hp 730 constants.  (smr)
+c   911114  added convex ieee constants.  (wrb)
+c   920121  added sun -r8 compiler option constants.  (wrb)
+c   920229  added touchstone delta i860 constants.  (wrb)
+c   920501  reformatted the references section.  (wrb)
+c   920625  added convex -p8 and -pd8 compiler option constants.
+c           (bks, wrb)
+c   930201  added dec alpha and sgi constants.  (rwc and wrb)
+c***end prologue  d1mach
+c
+      integer small(4)
+      integer large(4)
+      integer right(4)
+      integer diver(4)
+      integer log10(4)
+c
+      double precision dmach(5)
+      save dmach
+c
+      equivalence (dmach(1),small(1))
+      equivalence (dmach(2),large(1))
+      equivalence (dmach(3),right(1))
+      equivalence (dmach(4),diver(1))
+      equivalence (dmach(5),log10(1))
+c
+c     machine constants for the amiga
+c     absoft fortran compiler using the 68020/68881 compiler option
+c
+c     data small(1), small(2) / z'00100000', z'00000000' /
+c     data large(1), large(2) / z'7fefffff', z'ffffffff' /
+c     data right(1), right(2) / z'3ca00000', z'00000000' /
+c     data diver(1), diver(2) / z'3cb00000', z'00000000' /
+c     data log10(1), log10(2) / z'3fd34413', z'509f79ff' /
+c
+c     machine constants for the amiga
+c     absoft fortran compiler using software floating point
+c
+c     data small(1), small(2) / z'00100000', z'00000000' /
+c     data large(1), large(2) / z'7fdfffff', z'ffffffff' /
+c     data right(1), right(2) / z'3ca00000', z'00000000' /
+c     data diver(1), diver(2) / z'3cb00000', z'00000000' /
+c     data log10(1), log10(2) / z'3fd34413', z'509f79ff' /
+c
+c     machine constants for the apollo
+c
+c     data small(1), small(2) / 16#00100000, 16#00000000 /
+c     data large(1), large(2) / 16#7fffffff, 16#ffffffff /
+c     data right(1), right(2) / 16#3ca00000, 16#00000000 /
+c     data diver(1), diver(2) / 16#3cb00000, 16#00000000 /
+c     data log10(1), log10(2) / 16#3fd34413, 16#509f79ff /
+c
+c     machine constants for the burroughs 1700 system
+c
+c     data small(1) / zc00800000 /
+c     data small(2) / z000000000 /
+c     data large(1) / zdffffffff /
+c     data large(2) / zfffffffff /
+c     data right(1) / zcc5800000 /
+c     data right(2) / z000000000 /
+c     data diver(1) / zcc6800000 /
+c     data diver(2) / z000000000 /
+c     data log10(1) / zd00e730e7 /
+c     data log10(2) / zc77800dc0 /
+c
+c     machine constants for the burroughs 5700 system
+c
+c     data small(1) / o1771000000000000 /
+c     data small(2) / o0000000000000000 /
+c     data large(1) / o0777777777777777 /
+c     data large(2) / o0007777777777777 /
+c     data right(1) / o1461000000000000 /
+c     data right(2) / o0000000000000000 /
+c     data diver(1) / o1451000000000000 /
+c     data diver(2) / o0000000000000000 /
+c     data log10(1) / o1157163034761674 /
+c     data log10(2) / o0006677466732724 /
+c
+c     machine constants for the burroughs 6700/7700 systems
+c
+c     data small(1) / o1771000000000000 /
+c     data small(2) / o7770000000000000 /
+c     data large(1) / o0777777777777777 /
+c     data large(2) / o7777777777777777 /
+c     data right(1) / o1461000000000000 /
+c     data right(2) / o0000000000000000 /
+c     data diver(1) / o1451000000000000 /
+c     data diver(2) / o0000000000000000 /
+c     data log10(1) / o1157163034761674 /
+c     data log10(2) / o0006677466732724 /
+c
+c     machine constants for the cdc 170/180 series using nos/ve
+c
+c     data small(1) / z"3001800000000000" /
+c     data small(2) / z"3001000000000000" /
+c     data large(1) / z"4ffefffffffffffe" /
+c     data large(2) / z"4ffe000000000000" /
+c     data right(1) / z"3fd2800000000000" /
+c     data right(2) / z"3fd2000000000000" /
+c     data diver(1) / z"3fd3800000000000" /
+c     data diver(2) / z"3fd3000000000000" /
+c     data log10(1) / z"3fff9a209a84fbcf" /
+c     data log10(2) / z"3ffff7988f8959ac" /
+c
+c     machine constants for the cdc 6000/7000 series
+c
+c     data small(1) / 00564000000000000000b /
+c     data small(2) / 00000000000000000000b /
+c     data large(1) / 37757777777777777777b /
+c     data large(2) / 37157777777777777777b /
+c     data right(1) / 15624000000000000000b /
+c     data right(2) / 00000000000000000000b /
+c     data diver(1) / 15634000000000000000b /
+c     data diver(2) / 00000000000000000000b /
+c     data log10(1) / 17164642023241175717b /
+c     data log10(2) / 16367571421742254654b /
+c
+c     machine constants for the celerity c1260
+c
+c     data small(1), small(2) / z'00100000', z'00000000' /
+c     data large(1), large(2) / z'7fefffff', z'ffffffff' /
+c     data right(1), right(2) / z'3ca00000', z'00000000' /
+c     data diver(1), diver(2) / z'3cb00000', z'00000000' /
+c     data log10(1), log10(2) / z'3fd34413', z'509f79ff' /
+c
+c     machine constants for the convex
+c     using the -fn or -pd8 compiler option
+c
+c     data dmach(1) / z'0010000000000000' /
+c     data dmach(2) / z'7fffffffffffffff' /
+c     data dmach(3) / z'3cc0000000000000' /
+c     data dmach(4) / z'3cd0000000000000' /
+c     data dmach(5) / z'3ff34413509f79ff' /
+c
+c     machine constants for the convex
+c     using the -fi compiler option
+c
+c     data dmach(1) / z'0010000000000000' /
+c     data dmach(2) / z'7fefffffffffffff' /
+c     data dmach(3) / z'3ca0000000000000' /
+c     data dmach(4) / z'3cb0000000000000' /
+c     data dmach(5) / z'3fd34413509f79ff' /
+c
+c     machine constants for the convex
+c     using the -p8 compiler option
+c
+c     data dmach(1) / z'00010000000000000000000000000000' /
+c     data dmach(2) / z'7fffffffffffffffffffffffffffffff' /
+c     data dmach(3) / z'3f900000000000000000000000000000' /
+c     data dmach(4) / z'3f910000000000000000000000000000' /
+c     data dmach(5) / z'3fff34413509f79fef311f12b35816f9' /
+c
+c     machine constants for the cray
+c
+c     data small(1) / 201354000000000000000b /
+c     data small(2) / 000000000000000000000b /
+c     data large(1) / 577767777777777777777b /
+c     data large(2) / 000007777777777777774b /
+c     data right(1) / 376434000000000000000b /
+c     data right(2) / 000000000000000000000b /
+c     data diver(1) / 376444000000000000000b /
+c     data diver(2) / 000000000000000000000b /
+c     data log10(1) / 377774642023241175717b /
+c     data log10(2) / 000007571421742254654b /
+c
+c     machine constants for the data general eclipse s/200
+c     note - it may be appropriate to include the following card -
+c     static dmach(5)
+c
+c     data small /    20k, 3*0 /
+c     data large / 77777k, 3*177777k /
+c     data right / 31420k, 3*0 /
+c     data diver / 32020k, 3*0 /
+c     data log10 / 40423k, 42023k, 50237k, 74776k /
+c
+c     machine constants for the dec alpha
+c     using g_float
+c
+c     data dmach(1) / '0000000000000010'x /
+c     data dmach(2) / 'ffffffffffff7fff'x /
+c     data dmach(3) / '0000000000003cc0'x /
+c     data dmach(4) / '0000000000003cd0'x /
+c     data dmach(5) / '79ff509f44133ff3'x /
+c
+c     machine constants for the dec alpha
+c     using ieee_format
+c
+c     data dmach(1) / '0010000000000000'x /
+c     data dmach(2) / '7fefffffffffffff'x /
+c     data dmach(3) / '3ca0000000000000'x /
+c     data dmach(4) / '3cb0000000000000'x /
+c     data dmach(5) / '3fd34413509f79ff'x /
+c
+c     machine constants for the dec risc
+c
+c     data small(1), small(2) / z'00000000', z'00100000'/
+c     data large(1), large(2) / z'ffffffff', z'7fefffff'/
+c     data right(1), right(2) / z'00000000', z'3ca00000'/
+c     data diver(1), diver(2) / z'00000000', z'3cb00000'/
+c     data log10(1), log10(2) / z'509f79ff', z'3fd34413'/
+c
+c     machine constants for the dec vax
+c     using d_floating
+c     (expressed in integer and hexadecimal)
+c     the hex format below may not be suitable for unix systems
+c     the integer format should be ok for unix systems
+c
+c     data small(1), small(2) /        128,           0 /
+c     data large(1), large(2) /     -32769,          -1 /
+c     data right(1), right(2) /       9344,           0 /
+c     data diver(1), diver(2) /       9472,           0 /
+c     data log10(1), log10(2) /  546979738,  -805796613 /
+c
+c     data small(1), small(2) / z00000080, z00000000 /
+c     data large(1), large(2) / zffff7fff, zffffffff /
+c     data right(1), right(2) / z00002480, z00000000 /
+c     data diver(1), diver(2) / z00002500, z00000000 /
+c     data log10(1), log10(2) / z209a3f9a, zcff884fb /
+c
+c     machine constants for the dec vax
+c     using g_floating
+c     (expressed in integer and hexadecimal)
+c     the hex format below may not be suitable for unix systems
+c     the integer format should be ok for unix systems
+c
+c     data small(1), small(2) /         16,           0 /
+c     data large(1), large(2) /     -32769,          -1 /
+c     data right(1), right(2) /      15552,           0 /
+c     data diver(1), diver(2) /      15568,           0 /
+c     data log10(1), log10(2) /  1142112243, 2046775455 /
+c
+c     data small(1), small(2) / z00000010, z00000000 /
+c     data large(1), large(2) / zffff7fff, zffffffff /
+c     data right(1), right(2) / z00003cc0, z00000000 /
+c     data diver(1), diver(2) / z00003cd0, z00000000 /
+c     data log10(1), log10(2) / z44133ff3, z79ff509f /
+c
+c     machine constants for the elxsi 6400
+c     (assuming real*8 is the default double precision)
+c
+c     data small(1), small(2) / '00100000'x,'00000000'x /
+c     data large(1), large(2) / '7fefffff'x,'ffffffff'x /
+c     data right(1), right(2) / '3cb00000'x,'00000000'x /
+c     data diver(1), diver(2) / '3cc00000'x,'00000000'x /
+c     data log10(1), log10(2) / '3fd34413'x,'509f79ff'x /
+c
+c     machine constants for the harris 220
+c
+c     data small(1), small(2) / '20000000, '00000201 /
+c     data large(1), large(2) / '37777777, '37777577 /
+c     data right(1), right(2) / '20000000, '00000333 /
+c     data diver(1), diver(2) / '20000000, '00000334 /
+c     data log10(1), log10(2) / '23210115, '10237777 /
+c
+c     machine constants for the honeywell 600/6000 series
+c
+c     data small(1), small(2) / o402400000000, o000000000000 /
+c     data large(1), large(2) / o376777777777, o777777777777 /
+c     data right(1), right(2) / o604400000000, o000000000000 /
+c     data diver(1), diver(2) / o606400000000, o000000000000 /
+c     data log10(1), log10(2) / o776464202324, o117571775714 /
+c
+c     machine constants for the hp 730
+c
+c     data dmach(1) / z'0010000000000000' /
+c     data dmach(2) / z'7fefffffffffffff' /
+c     data dmach(3) / z'3ca0000000000000' /
+c     data dmach(4) / z'3cb0000000000000' /
+c     data dmach(5) / z'3fd34413509f79ff' /
+c
+c     machine constants for the hp 2100
+c     three word double precision option with ftn4
+c
+c     data small(1), small(2), small(3) / 40000b,       0,       1 /
+c     data large(1), large(2), large(3) / 77777b, 177777b, 177776b /
+c     data right(1), right(2), right(3) / 40000b,       0,    265b /
+c     data diver(1), diver(2), diver(3) / 40000b,       0,    276b /
+c     data log10(1), log10(2), log10(3) / 46420b,  46502b,  77777b /
+c
+c     machine constants for the hp 2100
+c     four word double precision option with ftn4
+c
+c     data small(1), small(2) /  40000b,       0 /
+c     data small(3), small(4) /       0,       1 /
+c     data large(1), large(2) /  77777b, 177777b /
+c     data large(3), large(4) / 177777b, 177776b /
+c     data right(1), right(2) /  40000b,       0 /
+c     data right(3), right(4) /       0,    225b /
+c     data diver(1), diver(2) /  40000b,       0 /
+c     data diver(3), diver(4) /       0,    227b /
+c     data log10(1), log10(2) /  46420b,  46502b /
+c     data log10(3), log10(4) /  76747b, 176377b /
+c
+c     machine constants for the hp 9000
+c
+c     data small(1), small(2) / 00040000000b, 00000000000b /
+c     data large(1), large(2) / 17737777777b, 37777777777b /
+c     data right(1), right(2) / 07454000000b, 00000000000b /
+c     data diver(1), diver(2) / 07460000000b, 00000000000b /
+c     data log10(1), log10(2) / 07764642023b, 12047674777b /
+c
+c     machine constants for the ibm 360/370 series,
+c     the xerox sigma 5/7/9, the sel systems 85/86, and
+c     the perkin elmer (interdata) 7/32.
+c
+c     data small(1), small(2) / z00100000, z00000000 /
+c     data large(1), large(2) / z7fffffff, zffffffff /
+c     data right(1), right(2) / z33100000, z00000000 /
+c     data diver(1), diver(2) / z34100000, z00000000 /
+c     data log10(1), log10(2) / z41134413, z509f79ff /
+c
+c     machine constants for the ibm pc
+c     assumes that all arithmetic is done in double precision
+c     on 8088, i.e., not in 80 bit form for the 8087.
+c
+c     data small(1) / 2.23d-308  /
+c     data large(1) / 1.79d+308  /
+c     data right(1) / 1.11d-16   /
+c     data diver(1) / 2.22d-16   /
+c     data log10(1) / 0.301029995663981195d0 /
+c
+c     machine constants for the ibm rs 6000
+c
+c     data dmach(1) / z'0010000000000000' /
+c     data dmach(2) / z'7fefffffffffffff' /
+c     data dmach(3) / z'3ca0000000000000' /
+c     data dmach(4) / z'3cb0000000000000' /
+c     data dmach(5) / z'3fd34413509f79ff' /
+c
+c     machine constants for the intel i860
+c
+c     data dmach(1) / z'0010000000000000' /
+c     data dmach(2) / z'7fefffffffffffff' /
+c     data dmach(3) / z'3ca0000000000000' /
+c     data dmach(4) / z'3cb0000000000000' /
+c     data dmach(5) / z'3fd34413509f79ff' /
+c
+c     machine constants for the pdp-10 (ka processor)
+c
+c     data small(1), small(2) / "033400000000, "000000000000 /
+c     data large(1), large(2) / "377777777777, "344777777777 /
+c     data right(1), right(2) / "113400000000, "000000000000 /
+c     data diver(1), diver(2) / "114400000000, "000000000000 /
+c     data log10(1), log10(2) / "177464202324, "144117571776 /
+c
+c     machine constants for the pdp-10 (ki processor)
+c
+c     data small(1), small(2) / "000400000000, "000000000000 /
+c     data large(1), large(2) / "377777777777, "377777777777 /
+c     data right(1), right(2) / "103400000000, "000000000000 /
+c     data diver(1), diver(2) / "104400000000, "000000000000 /
+c     data log10(1), log10(2) / "177464202324, "476747767461 /
+c
+c     machine constants for pdp-11 fortran supporting
+c     32-bit integers (expressed in integer and octal).
+c
+c     data small(1), small(2) /    8388608,           0 /
+c     data large(1), large(2) / 2147483647,          -1 /
+c     data right(1), right(2) /  612368384,           0 /
+c     data diver(1), diver(2) /  620756992,           0 /
+c     data log10(1), log10(2) / 1067065498, -2063872008 /
+c
+c     data small(1), small(2) / o00040000000, o00000000000 /
+c     data large(1), large(2) / o17777777777, o37777777777 /
+c     data right(1), right(2) / o04440000000, o00000000000 /
+c     data diver(1), diver(2) / o04500000000, o00000000000 /
+c     data log10(1), log10(2) / o07746420232, o20476747770 /
+c
+c     machine constants for pdp-11 fortran supporting
+c     16-bit integers (expressed in integer and octal).
+c
+c     data small(1), small(2) /    128,      0 /
+c     data small(3), small(4) /      0,      0 /
+c     data large(1), large(2) /  32767,     -1 /
+c     data large(3), large(4) /     -1,     -1 /
+c     data right(1), right(2) /   9344,      0 /
+c     data right(3), right(4) /      0,      0 /
+c     data diver(1), diver(2) /   9472,      0 /
+c     data diver(3), diver(4) /      0,      0 /
+c     data log10(1), log10(2) /  16282,   8346 /
+c     data log10(3), log10(4) / -31493, -12296 /
+c
+c     data small(1), small(2) / o000200, o000000 /
+c     data small(3), small(4) / o000000, o000000 /
+c     data large(1), large(2) / o077777, o177777 /
+c     data large(3), large(4) / o177777, o177777 /
+c     data right(1), right(2) / o022200, o000000 /
+c     data right(3), right(4) / o000000, o000000 /
+c     data diver(1), diver(2) / o022400, o000000 /
+c     data diver(3), diver(4) / o000000, o000000 /
+c     data log10(1), log10(2) / o037632, o020232 /
+c     data log10(3), log10(4) / o102373, o147770 /
+c
+c     machine constants for the silicon graphics
+c
+c     data small(1), small(2) / z'00100000', z'00000000' /
+c     data large(1), large(2) / z'7fefffff', z'ffffffff' /
+c     data right(1), right(2) / z'3ca00000', z'00000000' /
+c     data diver(1), diver(2) / z'3cb00000', z'00000000' /
+c     data log10(1), log10(2) / z'3fd34413', z'509f79ff' /
+c
+c     machine constants for the sun
+c
+c     data dmach(1) / z'0010000000000000' /
+c     data dmach(2) / z'7fefffffffffffff' /
+c     data dmach(3) / z'3ca0000000000000' /
+c     data dmach(4) / z'3cb0000000000000' /
+c     data dmach(5) / z'3fd34413509f79ff' /
+c
+c     machine constants for the sun
+c     using the -r8 compiler option
+c
+c     data dmach(1) / z'00010000000000000000000000000000' /
+c     data dmach(2) / z'7ffeffffffffffffffffffffffffffff' /
+c     data dmach(3) / z'3f8e0000000000000000000000000000' /
+c     data dmach(4) / z'3f8f0000000000000000000000000000' /
+c     data dmach(5) / z'3ffd34413509f79fef311f12b35816f9' /
+c
+c     machine constants for the sun 386i
+c
+c     data small(1), small(2) / z'fffffffd', z'000fffff' /
+c     data large(1), large(2) / z'ffffffb0', z'7fefffff' /
+c     data right(1), right(2) / z'000000b0', z'3ca00000' /
+c     data diver(1), diver(2) / z'ffffffcb', z'3cafffff'
+c     data log10(1), log10(2) / z'509f79e9', z'3fd34413' /
+c
+c     machine constants for the univac 1100 series ftn compiler
+c
+c     data small(1), small(2) / o000040000000, o000000000000 /
+c     data large(1), large(2) / o377777777777, o777777777777 /
+c     data right(1), right(2) / o170540000000, o000000000000 /
+c     data diver(1), diver(2) / o170640000000, o000000000000 /
+c     data log10(1), log10(2) / o177746420232, o411757177572 /
+c
+c***first executable statement  d1mach
+      if (i .lt. 1 .or. i .gt. 5) call xermsg ('slatec', 'd1mach',
+     +   'i out of bounds', 1, 2)
+c
+      d1mach = dmach(i)
+      return
+c
+      end
+*deck fdump
+      subroutine fdump
+c***begin prologue  fdump
+c***purpose  symbolic dump (should be locally written).
+c***library   slatec (xerror)
+c***category  r3
+c***type      all (fdump-a)
+c***keywords  error, xermsg
+c***author  jones, r. e., (snla)
+c***description
+c
+c        ***note*** machine dependent routine
+c        fdump is intended to be replaced by a locally written
+c        version which produces a symbolic dump.  failing this,
+c        it should be replaced by a version which prints the
+c        subprogram nesting list.  note that this dump must be
+c        printed on each of up to five files, as indicated by the
+c        xgetua routine.  see xsetua and xgetua for details.
+c
+c     written by ron jones, with slatec common math library subcommittee
+c
+c***references  (none)
+c***routines called  (none)
+c***revision history  (yymmdd)
+c   790801  date written
+c   861211  revision date from version 3.2
+c   891214  prologue converted to version 4.0 format.  (bab)
+c***end prologue  fdump
+c***first executable statement  fdump
+      return
+      end
+*deck i1mach
+      integer function i1mach (i)
+c***begin prologue  i1mach
+c***purpose  return integer machine dependent constants.
+c***library   slatec
+c***category  r1
+c***type      integer (i1mach-i)
+c***keywords  machine constants
+c***author  fox, p. a., (bell labs)
+c           hall, a. d., (bell labs)
+c           schryer, n. l., (bell labs)
+c***description
+c
+c   i1mach can be used to obtain machine-dependent parameters for the
+c   local machine environment.  it is a function subprogram with one
+c   (input) argument and can be referenced as follows:
+c
+c        k = i1mach(i)
+c
+c   where i=1,...,16.  the (output) value of k above is determined by
+c   the (input) value of i.  the results for various values of i are
+c   discussed below.
+c
+c   i/o unit numbers:
+c     i1mach( 1) = the standard input unit.
+c     i1mach( 2) = the standard output unit.
+c     i1mach( 3) = the standard punch unit.
+c     i1mach( 4) = the standard error message unit.
+c
+c   words:
+c     i1mach( 5) = the number of bits per integer storage unit.
+c     i1mach( 6) = the number of characters per integer storage unit.
+c
+c   integers:
+c     assume integers are represented in the s-digit, base-a form
+c
+c                sign ( x(s-1)*a**(s-1) + ... + x(1)*a + x(0) )
+c
+c                where 0 .le. x(i) .lt. a for i=0,...,s-1.
+c     i1mach( 7) = a, the base.
+c     i1mach( 8) = s, the number of base-a digits.
+c     i1mach( 9) = a**s - 1, the largest magnitude.
+c
+c   floating-point numbers:
+c     assume floating-point numbers are represented in the t-digit,
+c     base-b form
+c                sign (b**e)*( (x(1)/b) + ... + (x(t)/b**t) )
+c
+c                where 0 .le. x(i) .lt. b for i=1,...,t,
+c                0 .lt. x(1), and emin .le. e .le. emax.
+c     i1mach(10) = b, the base.
+c
+c   single-precision:
+c     i1mach(11) = t, the number of base-b digits.
+c     i1mach(12) = emin, the smallest exponent e.
+c     i1mach(13) = emax, the largest exponent e.
+c
+c   double-precision:
+c     i1mach(14) = t, the number of base-b digits.
+c     i1mach(15) = emin, the smallest exponent e.
+c     i1mach(16) = emax, the largest exponent e.
+c
+c   to alter this function for a particular environment, the desired
+c   set of data statements should be activated by removing the c from
+c   column 1.  also, the values of i1mach(1) - i1mach(4) should be
+c   checked for consistency with the local operating system.
+c
+c***references  p. a. fox, a. d. hall and n. l. schryer, framework for
+c                 a portable library, acm transactions on mathematical
+c                 software 4, 2 (june 1978), pp. 177-188.
+c***routines called  (none)
+c***revision history  (yymmdd)
+c   750101  date written
+c   891012  added vax g-floating constants.  (wrb)
+c   891012  revision date from version 3.2
+c   891214  prologue converted to version 4.0 format.  (bab)
+c   900618  added dec risc constants.  (wrb)
+c   900723  added ibm rs 6000 constants.  (wrb)
+c   901009  correct i1mach(7) for ibm mainframes. should be 2 not 16.
+c           (rwc)
+c   910710  added hp 730 constants.  (smr)
+c   911114  added convex ieee constants.  (wrb)
+c   920121  added sun -r8 compiler option constants.  (wrb)
+c   920229  added touchstone delta i860 constants.  (wrb)
+c   920501  reformatted the references section.  (wrb)
+c   920625  added convex -p8 and -pd8 compiler option constants.
+c           (bks, wrb)
+c   930201  added dec alpha and sgi constants.  (rwc and wrb)
+c   930618  corrected i1mach(5) for convex -p8 and -pd8 compiler
+c           options.  (dwl, rwc and wrb).
+c***end prologue  i1mach
+c
+      integer imach(16),output
+      save imach
+      equivalence (imach(4),output)
+c
+c     machine constants for the amiga
+c     absoft compiler
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          5 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -126 /
+c     data imach(13) /        127 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1022 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the apollo
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        129 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1025 /
+c
+c     machine constants for the burroughs 1700 system
+c
+c     data imach( 1) /          7 /
+c     data imach( 2) /          2 /
+c     data imach( 3) /          2 /
+c     data imach( 4) /          2 /
+c     data imach( 5) /         36 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         33 /
+c     data imach( 9) / z1ffffffff /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -256 /
+c     data imach(13) /        255 /
+c     data imach(14) /         60 /
+c     data imach(15) /       -256 /
+c     data imach(16) /        255 /
+c
+c     machine constants for the burroughs 5700 system
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         48 /
+c     data imach( 6) /          6 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         39 /
+c     data imach( 9) / o0007777777777777 /
+c     data imach(10) /          8 /
+c     data imach(11) /         13 /
+c     data imach(12) /        -50 /
+c     data imach(13) /         76 /
+c     data imach(14) /         26 /
+c     data imach(15) /        -50 /
+c     data imach(16) /         76 /
+c
+c     machine constants for the burroughs 6700/7700 systems
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         48 /
+c     data imach( 6) /          6 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         39 /
+c     data imach( 9) / o0007777777777777 /
+c     data imach(10) /          8 /
+c     data imach(11) /         13 /
+c     data imach(12) /        -50 /
+c     data imach(13) /         76 /
+c     data imach(14) /         26 /
+c     data imach(15) /     -32754 /
+c     data imach(16) /      32780 /
+c
+c     machine constants for the cdc 170/180 series using nos/ve
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         64 /
+c     data imach( 6) /          8 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         63 /
+c     data imach( 9) / 9223372036854775807 /
+c     data imach(10) /          2 /
+c     data imach(11) /         47 /
+c     data imach(12) /      -4095 /
+c     data imach(13) /       4094 /
+c     data imach(14) /         94 /
+c     data imach(15) /      -4095 /
+c     data imach(16) /       4094 /
+c
+c     machine constants for the cdc 6000/7000 series
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /    6loutput/
+c     data imach( 5) /         60 /
+c     data imach( 6) /         10 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         48 /
+c     data imach( 9) / 00007777777777777777b /
+c     data imach(10) /          2 /
+c     data imach(11) /         47 /
+c     data imach(12) /       -929 /
+c     data imach(13) /       1070 /
+c     data imach(14) /         94 /
+c     data imach(15) /       -929 /
+c     data imach(16) /       1069 /
+c
+c     machine constants for the celerity c1260
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          0 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / z'7fffffff' /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -126 /
+c     data imach(13) /        127 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1022 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the convex
+c     using the -fn compiler option
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1023 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the convex
+c     using the -fi compiler option
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        128 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1024 /
+c
+c     machine constants for the convex
+c     using the -p8 compiler option
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         64 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         63 /
+c     data imach( 9) / 9223372036854775807 /
+c     data imach(10) /          2 /
+c     data imach(11) /         53 /
+c     data imach(12) /      -1023 /
+c     data imach(13) /       1023 /
+c     data imach(14) /        113 /
+c     data imach(15) /     -16383 /
+c     data imach(16) /      16383 /
+c
+c     machine constants for the convex
+c     using the -pd8 compiler option
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         64 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         63 /
+c     data imach( 9) / 9223372036854775807 /
+c     data imach(10) /          2 /
+c     data imach(11) /         53 /
+c     data imach(12) /      -1023 /
+c     data imach(13) /       1023 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1023 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the cray
+c     using the 46 bit integer compiler option
+c
+c     data imach( 1) /        100 /
+c     data imach( 2) /        101 /
+c     data imach( 3) /        102 /
+c     data imach( 4) /        101 /
+c     data imach( 5) /         64 /
+c     data imach( 6) /          8 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         46 /
+c     data imach( 9) / 1777777777777777b /
+c     data imach(10) /          2 /
+c     data imach(11) /         47 /
+c     data imach(12) /      -8189 /
+c     data imach(13) /       8190 /
+c     data imach(14) /         94 /
+c     data imach(15) /      -8099 /
+c     data imach(16) /       8190 /
+c
+c     machine constants for the cray
+c     using the 64 bit integer compiler option
+c
+c     data imach( 1) /        100 /
+c     data imach( 2) /        101 /
+c     data imach( 3) /        102 /
+c     data imach( 4) /        101 /
+c     data imach( 5) /         64 /
+c     data imach( 6) /          8 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         63 /
+c     data imach( 9) / 777777777777777777777b /
+c     data imach(10) /          2 /
+c     data imach(11) /         47 /
+c     data imach(12) /      -8189 /
+c     data imach(13) /       8190 /
+c     data imach(14) /         94 /
+c     data imach(15) /      -8099 /
+c     data imach(16) /       8190 /
+c
+c     machine constants for the data general eclipse s/200
+c
+c     data imach( 1) /         11 /
+c     data imach( 2) /         12 /
+c     data imach( 3) /          8 /
+c     data imach( 4) /         10 /
+c     data imach( 5) /         16 /
+c     data imach( 6) /          2 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         15 /
+c     data imach( 9) /      32767 /
+c     data imach(10) /         16 /
+c     data imach(11) /          6 /
+c     data imach(12) /        -64 /
+c     data imach(13) /         63 /
+c     data imach(14) /         14 /
+c     data imach(15) /        -64 /
+c     data imach(16) /         63 /
+c
+c     machine constants for the dec alpha
+c     using g_float
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          5 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1023 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the dec alpha
+c     using ieee_float
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        128 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1024 /
+c
+c     machine constants for the dec risc
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        128 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1024 /
+c
+c     machine constants for the dec vax
+c     using d_floating
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          5 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         56 /
+c     data imach(15) /       -127 /
+c     data imach(16) /        127 /
+c
+c     machine constants for the dec vax
+c     using g_floating
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          5 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1023 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the elxsi 6400
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         32 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -126 /
+c     data imach(13) /        127 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1022 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the harris 220
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          0 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         24 /
+c     data imach( 6) /          3 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         23 /
+c     data imach( 9) /    8388607 /
+c     data imach(10) /          2 /
+c     data imach(11) /         23 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         38 /
+c     data imach(15) /       -127 /
+c     data imach(16) /        127 /
+c
+c     machine constants for the honeywell 600/6000 series
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /         43 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         36 /
+c     data imach( 6) /          6 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         35 /
+c     data imach( 9) / o377777777777 /
+c     data imach(10) /          2 /
+c     data imach(11) /         27 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         63 /
+c     data imach(15) /       -127 /
+c     data imach(16) /        127 /
+c
+c     machine constants for the hp 730
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        128 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1024 /
+c
+c     machine constants for the hp 2100
+c     3 word double precision option with ftn4
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          4 /
+c     data imach( 4) /          1 /
+c     data imach( 5) /         16 /
+c     data imach( 6) /          2 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         15 /
+c     data imach( 9) /      32767 /
+c     data imach(10) /          2 /
+c     data imach(11) /         23 /
+c     data imach(12) /       -128 /
+c     data imach(13) /        127 /
+c     data imach(14) /         39 /
+c     data imach(15) /       -128 /
+c     data imach(16) /        127 /
+c
+c     machine constants for the hp 2100
+c     4 word double precision option with ftn4
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          4 /
+c     data imach( 4) /          1 /
+c     data imach( 5) /         16 /
+c     data imach( 6) /          2 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         15 /
+c     data imach( 9) /      32767 /
+c     data imach(10) /          2 /
+c     data imach(11) /         23 /
+c     data imach(12) /       -128 /
+c     data imach(13) /        127 /
+c     data imach(14) /         55 /
+c     data imach(15) /       -128 /
+c     data imach(16) /        127 /
+c
+c     machine constants for the hp 9000
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          7 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         32 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -126 /
+c     data imach(13) /        127 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1015 /
+c     data imach(16) /       1017 /
+c
+c     machine constants for the ibm 360/370 series,
+c     the xerox sigma 5/7/9, the sel systems 85/86, and
+c     the perkin elmer (interdata) 7/32.
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          7 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) /  z7fffffff /
+c     data imach(10) /         16 /
+c     data imach(11) /          6 /
+c     data imach(12) /        -64 /
+c     data imach(13) /         63 /
+c     data imach(14) /         14 /
+c     data imach(15) /        -64 /
+c     data imach(16) /         63 /
+c
+c     machine constants for the ibm pc
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          0 /
+c     data imach( 4) /          0 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        127 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the ibm rs 6000
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          0 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        128 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1024 /
+c
+c     machine constants for the intel i860
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        128 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1024 /
+c
+c     machine constants for the pdp-10 (ka processor)
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          5 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         36 /
+c     data imach( 6) /          5 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         35 /
+c     data imach( 9) / "377777777777 /
+c     data imach(10) /          2 /
+c     data imach(11) /         27 /
+c     data imach(12) /       -128 /
+c     data imach(13) /        127 /
+c     data imach(14) /         54 /
+c     data imach(15) /       -101 /
+c     data imach(16) /        127 /
+c
+c     machine constants for the pdp-10 (ki processor)
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          5 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         36 /
+c     data imach( 6) /          5 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         35 /
+c     data imach( 9) / "377777777777 /
+c     data imach(10) /          2 /
+c     data imach(11) /         27 /
+c     data imach(12) /       -128 /
+c     data imach(13) /        127 /
+c     data imach(14) /         62 /
+c     data imach(15) /       -128 /
+c     data imach(16) /        127 /
+c
+c     machine constants for pdp-11 fortran supporting
+c     32-bit integer arithmetic.
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          5 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         56 /
+c     data imach(15) /       -127 /
+c     data imach(16) /        127 /
+c
+c     machine constants for pdp-11 fortran supporting
+c     16-bit integer arithmetic.
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          5 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         16 /
+c     data imach( 6) /          2 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         15 /
+c     data imach( 9) /      32767 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         56 /
+c     data imach(15) /       -127 /
+c     data imach(16) /        127 /
+c
+c     machine constants for the silicon graphics
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        128 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1024 /
+c
+c     machine constants for the sun
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -125 /
+c     data imach(13) /        128 /
+c     data imach(14) /         53 /
+c     data imach(15) /      -1021 /
+c     data imach(16) /       1024 /
+c
+c     machine constants for the sun
+c     using the -r8 compiler option
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          6 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         32 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         31 /
+c     data imach( 9) / 2147483647 /
+c     data imach(10) /          2 /
+c     data imach(11) /         53 /
+c     data imach(12) /      -1021 /
+c     data imach(13) /       1024 /
+c     data imach(14) /        113 /
+c     data imach(15) /     -16381 /
+c     data imach(16) /      16384 /
+c
+c     machine constants for the univac 1100 series ftn compiler
+c
+c     data imach( 1) /          5 /
+c     data imach( 2) /          6 /
+c     data imach( 3) /          1 /
+c     data imach( 4) /          6 /
+c     data imach( 5) /         36 /
+c     data imach( 6) /          4 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         35 /
+c     data imach( 9) / o377777777777 /
+c     data imach(10) /          2 /
+c     data imach(11) /         27 /
+c     data imach(12) /       -128 /
+c     data imach(13) /        127 /
+c     data imach(14) /         60 /
+c     data imach(15) /      -1024 /
+c     data imach(16) /       1023 /
+c
+c     machine constants for the z80 microprocessor
+c
+c     data imach( 1) /          1 /
+c     data imach( 2) /          1 /
+c     data imach( 3) /          0 /
+c     data imach( 4) /          1 /
+c     data imach( 5) /         16 /
+c     data imach( 6) /          2 /
+c     data imach( 7) /          2 /
+c     data imach( 8) /         15 /
+c     data imach( 9) /      32767 /
+c     data imach(10) /          2 /
+c     data imach(11) /         24 /
+c     data imach(12) /       -127 /
+c     data imach(13) /        127 /
+c     data imach(14) /         56 /
+c     data imach(15) /       -127 /
+c     data imach(16) /        127 /
+c
+c***first executable statement  i1mach
+      if (i .lt. 1  .or.  i .gt. 16) go to 10
+c
+      i1mach = imach(i)
+      return
+c
+   10 continue
+      write (unit = output, fmt = 9000)
+ 9000 format ('1error    1 in i1mach - i out of bounds')
+c
+c     call fdump
+c
+      stop
+      end
+*deck j4save
+      function j4save (iwhich, ivalue, iset)
+c***begin prologue  j4save
+c***subsidiary
+c***purpose  save or recall global variables needed by error
+c            handling routines.
+c***library   slatec (xerror)
+c***type      integer (j4save-i)
+c***keywords  error messages, error number, recall, save, xerror
+c***author  jones, r. e., (snla)
+c***description
+c
+c     abstract
+c        j4save saves and recalls several global variables needed
+c        by the library error handling routines.
+c
+c     description of parameters
+c      --input--
+c        iwhich - index of item desired.
+c                = 1 refers to current error number.
+c                = 2 refers to current error control flag.
+c                = 3 refers to current unit number to which error
+c                    messages are to be sent.  (0 means use standard.)
+c                = 4 refers to the maximum number of times any
+c                     message is to be printed (as set by xermax).
+c                = 5 refers to the total number of units to which
+c                     each error message is to be written.
+c                = 6 refers to the 2nd unit for error messages
+c                = 7 refers to the 3rd unit for error messages
+c                = 8 refers to the 4th unit for error messages
+c                = 9 refers to the 5th unit for error messages
+c        ivalue - the value to be set for the iwhich-th parameter,
+c                 if iset is .true. .
+c        iset   - if iset=.true., the iwhich-th parameter will be
+c                 given the value, ivalue.  if iset=.false., the
+c                 iwhich-th parameter will be unchanged, and ivalue
+c                 is a dummy parameter.
+c      --output--
+c        the (old) value of the iwhich-th parameter will be returned
+c        in the function value, j4save.
+c
+c***see also  xermsg
+c***references  r. e. jones and d. k. kahaner, xerror, the slatec
+c                 error-handling package, sand82-0800, sandia
+c                 laboratories, 1982.
+c***routines called  (none)
+c***revision history  (yymmdd)
+c   790801  date written
+c   891214  prologue converted to version 4.0 format.  (bab)
+c   900205  minor modifications to prologue.  (wrb)
+c   900402  added type section.  (wrb)
+c   910411  added keywords section.  (wrb)
+c   920501  reformatted the references section.  (wrb)
+c***end prologue  j4save
+      logical iset
+      integer iparam(9)
+      save iparam
+      data iparam(1),iparam(2),iparam(3),iparam(4)/0,2,0,10/
+      data iparam(5)/1/
+      data iparam(6),iparam(7),iparam(8),iparam(9)/0,0,0,0/
+c***first executable statement  j4save
+      j4save = iparam(iwhich)
+      if (iset) iparam(iwhich) = ivalue
+      return
+      end
+*deck xercnt
+      subroutine xercnt (librar, subrou, messg, nerr, level, kontrl)
+c***begin prologue  xercnt
+c***subsidiary
+c***purpose  allow user control over handling of errors.
+c***library   slatec (xerror)
+c***category  r3c
+c***type      all (xercnt-a)
+c***keywords  error, xerror
+c***author  jones, r. e., (snla)
+c***description
+c
+c     abstract
+c        allows user control over handling of individual errors.
+c        just after each message is recorded, but before it is
+c        processed any further (i.e., before it is printed or
+c        a decision to abort is made), a call is made to xercnt.
+c        if the user has provided his own version of xercnt, he
+c        can then override the value of kontrol used in processing
+c        this message by redefining its value.
+c        kontrl may be set to any value from -2 to 2.
+c        the meanings for kontrl are the same as in xsetf, except
+c        that the value of kontrl changes only for this message.
+c        if kontrl is set to a value outside the range from -2 to 2,
+c        it will be moved back into that range.
+c
+c     description of parameters
+c
+c      --input--
+c        librar - the library that the routine is in.
+c        subrou - the subroutine that xermsg is being called from
+c        messg  - the first 20 characters of the error message.
+c        nerr   - same as in the call to xermsg.
+c        level  - same as in the call to xermsg.
+c        kontrl - the current value of the control flag as set
+c                 by a call to xsetf.
+c
+c      --output--
+c        kontrl - the new value of kontrl.  if kontrl is not
+c                 defined, it will remain at its original value.
+c                 this changed value of control affects only
+c                 the current occurrence of the current message.
+c
+c***references  r. e. jones and d. k. kahaner, xerror, the slatec
+c                 error-handling package, sand82-0800, sandia
+c                 laboratories, 1982.
+c***routines called  (none)
+c***revision history  (yymmdd)
+c   790801  date written
+c   861211  revision date from version 3.2
+c   891214  prologue converted to version 4.0 format.  (bab)
+c   900206  routine changed from user-callable to subsidiary.  (wrb)
+c   900510  changed calling sequence to include library and subroutine
+c           names, changed routine name from xerctl to xercnt.  (rwc)
+c   920501  reformatted the references section.  (wrb)
+c***end prologue  xercnt
+      character*(*) librar, subrou, messg
+c***first executable statement  xercnt
+      return
+      end
+*deck xerhlt
+      subroutine xerhlt (messg)
+c***begin prologue  xerhlt
+c***subsidiary
+c***purpose  abort program execution and print error message.
+c***library   slatec (xerror)
+c***category  r3c
+c***type      all (xerhlt-a)
+c***keywords  abort program execution, error, xerror
+c***author  jones, r. e., (snla)
+c***description
+c
+c     abstract
+c        ***note*** machine dependent routine
+c        xerhlt aborts the execution of the program.
+c        the error message causing the abort is given in the calling
+c        sequence, in case one needs it for printing on a dayfile,
+c        for example.
+c
+c     description of parameters
+c        messg is as in xermsg.
+c
+c***references  r. e. jones and d. k. kahaner, xerror, the slatec
+c                 error-handling package, sand82-0800, sandia
+c                 laboratories, 1982.
+c***routines called  (none)
+c***revision history  (yymmdd)
+c   790801  date written
+c   861211  revision date from version 3.2
+c   891214  prologue converted to version 4.0 format.  (bab)
+c   900206  routine changed from user-callable to subsidiary.  (wrb)
+c   900510  changed calling sequence to delete length of character
+c           and changed routine name from xerabt to xerhlt.  (rwc)
+c   920501  reformatted the references section.  (wrb)
+c***end prologue  xerhlt
+      character*(*) messg
+c***first executable statement  xerhlt
+      stop
+      end
+*deck xermsg
+      subroutine xermsg (librar, subrou, messg, nerr, level)
+c***begin prologue  xermsg
+c***purpose  process error messages for slatec and other libraries.
+c***library   slatec (xerror)
+c***category  r3c
+c***type      all (xermsg-a)
+c***keywords  error message, xerror
+c***author  fong, kirby, (nmfecc at llnl)
+c***description
+c
+c   xermsg processes a diagnostic message in a manner determined by the
+c   value of level and the current value of the library error control
+c   flag, kontrl.  see subroutine xsetf for details.
+c
+c    librar   a character constant (or character variable) with the name
+c             of the library.  this will be 'slatec' for the slatec
+c             common math library.  the error handling package is
+c             general enough to be used by many libraries
+c             simultaneously, so it is desirable for the routine that
+c             detects and reports an error to identify the library name
+c             as well as the routine name.
+c
+c    subrou   a character constant (or character variable) with the name
+c             of the routine that detected the error.  usually it is the
+c             name of the routine that is calling xermsg.  there are
+c             some instances where a user callable library routine calls
+c             lower level subsidiary routines where the error is
+c             detected.  in such cases it may be more informative to
+c             supply the name of the routine the user called rather than
+c             the name of the subsidiary routine that detected the
+c             error.
+c
+c    messg    a character constant (or character variable) with the text
+c             of the error or warning message.  in the example below,
+c             the message is a character constant that contains a
+c             generic message.
+c
+c                   call xermsg ('slatec', 'mmpy',
+c                  *'the order of the matrix exceeds the row dimension',
+c                  *3, 1)
+c
+c             it is possible (and is sometimes desirable) to generate a
+c             specific message--e.g., one that contains actual numeric
+c             values.  specific numeric values can be converted into
+c             character strings using formatted write statements into
+c             character variables.  this is called standard fortran
+c             internal file i/o and is exemplified in the first three
+c             lines of the following example.  you can also catenate
+c             substrings of characters to construct the error message.
+c             here is an example showing the use of both writing to
+c             an internal file and catenating character strings.
+c
+c                   character*5 charn, charl
+c                   write (charn,10) n
+c                   write (charl,10) lda
+c                10 format(i5)
+c                   call xermsg ('slatec', 'mmpy', 'the order'//charn//
+c                  *   ' of the matrix exceeds its row dimension of'//
+c                  *   charl, 3, 1)
+c
+c             there are two subtleties worth mentioning.  one is that
+c             the // for character catenation is used to construct the
+c             error message so that no single character constant is
+c             continued to the next line.  this avoids confusion as to
+c             whether there are trailing blanks at the end of the line.
+c             the second is that by catenating the parts of the message
+c             as an actual argument rather than encoding the entire
+c             message into one large character variable, we avoid
+c             having to know how long the message will be in order to
+c             declare an adequate length for that large character
+c             variable.  xermsg calls xerprn to print the message using
+c             multiple lines if necessary.  if the message is very long,
+c             xerprn will break it into pieces of 72 characters (as
+c             requested by xermsg) for printing on multiple lines.
+c             also, xermsg asks xerprn to prefix each line with ' *  '
+c             so that the total line length could be 76 characters.
+c             note also that xerprn scans the error message backwards
+c             to ignore trailing blanks.  another feature is that
+c             the substring '$$' is treated as a new line sentinel
+c             by xerprn.  if you want to construct a multiline
+c             message without having to count out multiples of 72
+c             characters, just use '$$' as a separator.  '$$'
+c             obviously must occur within 72 characters of the
+c             start of each line to have its intended effect since
+c             xerprn is asked to wrap around at 72 characters in
+c             addition to looking for '$$'.
+c
+c    nerr     an integer value that is chosen by the library routine's
+c             author.  it must be in the range -99 to 999 (three
+c             printable digits).  each distinct error should have its
+c             own error number.  these error numbers should be described
+c             in the machine readable documentation for the routine.
+c             the error numbers need be unique only within each routine,
+c             so it is reasonable for each routine to start enumerating
+c             errors from 1 and proceeding to the next integer.
+c
+c    level    an integer value in the range 0 to 2 that indicates the
+c             level (severity) of the error.  their meanings are
+c
+c            -1  a warning message.  this is used if it is not clear
+c                that there really is an error, but the user's attention
+c                may be needed.  an attempt is made to only print this
+c                message once.
+c
+c             0  a warning message.  this is used if it is not clear
+c                that there really is an error, but the user's attention
+c                may be needed.
+c
+c             1  a recoverable error.  this is used even if the error is
+c                so serious that the routine cannot return any useful
+c                answer.  if the user has told the error package to
+c                return after recoverable errors, then xermsg will
+c                return to the library routine which can then return to
+c                the user's routine.  the user may also permit the error
+c                package to terminate the program upon encountering a
+c                recoverable error.
+c
+c             2  a fatal error.  xermsg will not return to its caller
+c                after it receives a fatal error.  this level should
+c                hardly ever be used; it is much better to allow the
+c                user a chance to recover.  an example of one of the few
+c                cases in which it is permissible to declare a level 2
+c                error is a reverse communication library routine that
+c                is likely to be called repeatedly until it integrates
+c                across some interval.  if there is a serious error in
+c                the input such that another step cannot be taken and
+c                the library routine is called again without the input
+c                error having been corrected by the caller, the library
+c                routine will probably be called forever with improper
+c                input.  in this case, it is reasonable to declare the
+c                error to be fatal.
+c
+c    each of the arguments to xermsg is input; none will be modified by
+c    xermsg.  a routine may make multiple calls to xermsg with warning
+c    level messages; however, after a call to xermsg with a recoverable
+c    error, the routine should return to the user.  do not try to call
+c    xermsg with a second recoverable error after the first recoverable
+c    error because the error package saves the error number.  the user
+c    can retrieve this error number by calling another entry point in
+c    the error handling package and then clear the error number when
+c    recovering from the error.  calling xermsg in succession causes the
+c    old error number to be overwritten by the latest error number.
+c    this is considered harmless for error numbers associated with
+c    warning messages but must not be done for error numbers of serious
+c    errors.  after a call to xermsg with a recoverable error, the user
+c    must be given a chance to call numxer or xerclr to retrieve or
+c    clear the error number.
+c***references  r. e. jones and d. k. kahaner, xerror, the slatec
+c                 error-handling package, sand82-0800, sandia
+c                 laboratories, 1982.
+c***routines called  fdump, j4save, xercnt, xerhlt, xerprn, xersve
+c***revision history  (yymmdd)
+c   880101  date written
+c   880621  revised as directed at slatec cml meeting of february 1988.
+c           there are two basic changes.
+c           1.  a new routine, xerprn, is used instead of xerprt to
+c               print messages.  this routine will break long messages
+c               into pieces for printing on multiple lines.  '$$' is
+c               accepted as a new line sentinel.  a prefix can be
+c               added to each line to be printed.  xermsg uses either
+c               ' ***' or ' *  ' and long messages are broken every
+c               72 characters (at most) so that the maximum line
+c               length output can now be as great as 76.
+c           2.  the text of all messages is now in upper case since the
+c               fortran standard document does not admit the existence
+c               of lower case.
+c   880708  revised after the slatec cml meeting of june 29 and 30.
+c           the principal changes are
+c           1.  clarify comments in the prologues
+c           2.  rename xrprnt to xerprn
+c           3.  rework handling of '$$' in xerprn to handle blank lines
+c               similar to the way format statements handle the /
+c               character for new records.
+c   890706  revised with the help of fred fritsch and reg clemens to
+c           clean up the coding.
+c   890721  revised to use new feature in xerprn to count characters in
+c           prefix.
+c   891013  revised to correct comments.
+c   891214  prologue converted to version 4.0 format.  (wrb)
+c   900510  changed test on nerr to be -9999999 < nerr < 99999999, but
+c           nerr .ne. 0, and on level to be -2 < level < 3.  added
+c           level=-1 logic, changed calls to xersav to xersve, and
+c           xerctl to xercnt.  (rwc)
+c   920501  reformatted the references section.  (wrb)
+c***end prologue  xermsg
+      character*(*) librar, subrou, messg
+      character*8 xlibr, xsubr
+      character*72  temp
+      character*20  lfirst
+c***first executable statement  xermsg
+      lkntrl = j4save (2, 0, .false.)
+      maxmes = j4save (4, 0, .false.)
+c
+c       lkntrl is a local copy of the control flag kontrl.
+c       maxmes is the maximum number of times any particular message
+c          should be printed.
+c
+c       we print a fatal error message and terminate for an error in
+c          calling xermsg.  the error number should be positive,
+c          and the level should be between 0 and 2.
+c
+      if (nerr.lt.-9999999 .or. nerr.gt.99999999 .or. nerr.eq.0 .or.
+     *   level.lt.-1 .or. level.gt.2) then
+         call xerprn (' ***', -1, 'fatal error in...$$ ' //
+     *      'xermsg -- invalid error number or level$$ '//
+     *      'job abort due to fatal error.', 72)
+         call xersve (' ', ' ', ' ', 0, 0, 0, kdummy)
+         call xerhlt (' ***xermsg -- invalid input')
+         return
+      endif
+c
+c       record the message.
+c
+      i = j4save (1, nerr, .true.)
+      call xersve (librar, subrou, messg, 1, nerr, level, kount)
+c
+c       handle print-once warning messages.
+c
+      if (level.eq.-1 .and. kount.gt.1) return
+c
+c       allow temporary user override of the control flag.
+c
+      xlibr  = librar
+      xsubr  = subrou
+      lfirst = messg
+      lerr   = nerr
+      llevel = level
+      call xercnt (xlibr, xsubr, lfirst, lerr, llevel, lkntrl)
+c
+      lkntrl = max(-2, min(2,lkntrl))
+      mkntrl = abs(lkntrl)
+c
+c       skip printing if the control flag value as reset in xercnt is
+c       zero and the error is not fatal.
+c
+      if (level.lt.2 .and. lkntrl.eq.0) go to 30
+      if (level.eq.0 .and. kount.gt.maxmes) go to 30
+      if (level.eq.1 .and. kount.gt.maxmes .and. mkntrl.eq.1) go to 30
+      if (level.eq.2 .and. kount.gt.max(1,maxmes)) go to 30
+c
+c       announce the names of the library and subroutine by building a
+c       message in character variable temp (not exceeding 66 characters)
+c       and sending it out via xerprn.  print only if control flag
+c       is not zero.
+c
+      if (lkntrl .ne. 0) then
+         temp(1:21) = 'message from routine '
+         i = min(len(subrou), 16)
+         temp(22:21+i) = subrou(1:i)
+         temp(22+i:33+i) = ' in library '
+         ltemp = 33 + i
+         i = min(len(librar), 16)
+         temp(ltemp+1:ltemp+i) = librar (1:i)
+         temp(ltemp+i+1:ltemp+i+1) = '.'
+         ltemp = ltemp + i + 1
+         call xerprn (' ***', -1, temp(1:ltemp), 72)
+      endif
+c
+c       if lkntrl is positive, print an introductory line before
+c       printing the message.  the introductory line tells the choice
+c       from each of the following three options.
+c       1.  level of the message
+c              'informative message'
+c              'potentially recoverable error'
+c              'fatal error'
+c       2.  whether control flag will allow program to continue
+c              'prog continues'
+c              'prog aborted'
+c       3.  whether or not a traceback was requested.  (the traceback
+c           may not be implemented at some sites, so this only tells
+c           what was requested, not what was delivered.)
+c              'traceback requested'
+c              'traceback not requested'
+c       notice that the line including four prefix characters will not
+c       exceed 74 characters.
+c       we skip the next block if the introductory line is not needed.
+c
+      if (lkntrl .gt. 0) then
+c
+c       the first part of the message tells about the level.
+c
+         if (level .le. 0) then
+            temp(1:20) = 'informative message,'
+            ltemp = 20
+         elseif (level .eq. 1) then
+            temp(1:30) = 'potentially recoverable error,'
+            ltemp = 30
+         else
+            temp(1:12) = 'fatal error,'
+            ltemp = 12
+         endif
+c
+c       then whether the program will continue.
+c
+         if ((mkntrl.eq.2 .and. level.ge.1) .or.
+     *       (mkntrl.eq.1 .and. level.eq.2)) then
+            temp(ltemp+1:ltemp+14) = ' prog aborted,'
+            ltemp = ltemp + 14
+         else
+            temp(ltemp+1:ltemp+16) = ' prog continues,'
+            ltemp = ltemp + 16
+         endif
+c
+c       finally tell whether there should be a traceback.
+c
+         if (lkntrl .gt. 0) then
+            temp(ltemp+1:ltemp+20) = ' traceback requested'
+            ltemp = ltemp + 20
+         else
+            temp(ltemp+1:ltemp+24) = ' traceback not requested'
+            ltemp = ltemp + 24
+         endif
+         call xerprn (' ***', -1, temp(1:ltemp), 72)
+      endif
+c
+c       now send out the message.
+c
+      call xerprn (' *  ', -1, messg, 72)
+c
+c       if lkntrl is positive, write the error number and request a
+c          traceback.
+c
+      if (lkntrl .gt. 0) then
+         write (temp, '(''error number = '', i8)') nerr
+         do 10 i=16,22
+            if (temp(i:i) .ne. ' ') go to 20
+   10    continue
+c
+   20    call xerprn (' *  ', -1, temp(1:15) // temp(i:23), 72)
+         call fdump
+      endif
+c
+c       if lkntrl is not zero, print a blank line and an end of message.
+c
+      if (lkntrl .ne. 0) then
+         call xerprn (' *  ', -1, ' ', 72)
+         call xerprn (' ***', -1, 'end of message', 72)
+         call xerprn ('    ',  0, ' ', 72)
+      endif
+c
+c       if the error is not fatal or the error is recoverable and the
+c       control flag is set for recovery, then return.
+c
+   30 if (level.le.0 .or. (level.eq.1 .and. mkntrl.le.1)) return
+c
+c       the program will be stopped due to an unrecovered error or a
+c       fatal error.  print the reason for the abort and the error
+c       summary if the control flag and the maximum error count permit.
+c
+      if (lkntrl.gt.0 .and. kount.lt.max(1,maxmes)) then
+         if (level .eq. 1) then
+            call xerprn
+     *         (' ***', -1, 'job abort due to unrecovered error.', 72)
+         else
+            call xerprn(' ***', -1, 'job abort due to fatal error.', 72)
+         endif
+         call xersve (' ', ' ', ' ', -1, 0, 0, kdummy)
+         call xerhlt (' ')
+      else
+         call xerhlt (messg)
+      endif
+      return
+      end
+*deck xerprn
+      subroutine xerprn (prefix, npref, messg, nwrap)
+c***begin prologue  xerprn
+c***subsidiary
+c***purpose  print error messages processed by xermsg.
+c***library   slatec (xerror)
+c***category  r3c
+c***type      all (xerprn-a)
+c***keywords  error messages, printing, xerror
+c***author  fong, kirby, (nmfecc at llnl)
+c***description
+c
+c this routine sends one or more lines to each of the (up to five)
+c logical units to which error messages are to be sent.  this routine
+c is called several times by xermsg, sometimes with a single line to
+c print and sometimes with a (potentially very long) message that may
+c wrap around into multiple lines.
+c
+c prefix  input argument of type character.  this argument contains
+c         characters to be put at the beginning of each line before
+c         the body of the message.  no more than 16 characters of
+c         prefix will be used.
+c
+c npref   input argument of type integer.  this argument is the number
+c         of characters to use from prefix.  if it is negative, the
+c         intrinsic function len is used to determine its length.  if
+c         it is zero, prefix is not used.  if it exceeds 16 or if
+c         len(prefix) exceeds 16, only the first 16 characters will be
+c         used.  if npref is positive and the length of prefix is less
+c         than npref, a copy of prefix extended with blanks to length
+c         npref will be used.
+c
+c messg   input argument of type character.  this is the text of a
+c         message to be printed.  if it is a long message, it will be
+c         broken into pieces for printing on multiple lines.  each line
+c         will start with the appropriate prefix and be followed by a
+c         piece of the message.  nwrap is the number of characters per
+c         piece; that is, after each nwrap characters, we break and
+c         start a new line.  in addition the characters '$$' embedded
+c         in messg are a sentinel for a new line.  the counting of
+c         characters up to nwrap starts over for each new line.  the
+c         value of nwrap typically used by xermsg is 72 since many
+c         older error messages in the slatec library are laid out to
+c         rely on wrap-around every 72 characters.
+c
+c nwrap   input argument of type integer.  this gives the maximum size
+c         piece into which to break messg for printing on multiple
+c         lines.  an embedded '$$' ends a line, and the count restarts
+c         at the following character.  if a line break does not occur
+c         on a blank (it would split a word) that word is moved to the
+c         next line.  values of nwrap less than 16 will be treated as
+c         16.  values of nwrap greater than 132 will be treated as 132.
+c         the actual line length will be npref + nwrap after npref has
+c         been adjusted to fall between 0 and 16 and nwrap has been
+c         adjusted to fall between 16 and 132.
+c
+c***references  r. e. jones and d. k. kahaner, xerror, the slatec
+c                 error-handling package, sand82-0800, sandia
+c                 laboratories, 1982.
+c***routines called  i1mach, xgetua
+c***revision history  (yymmdd)
+c   880621  date written
+c   880708  revised after the slatec cml subcommittee meeting of
+c           june 29 and 30 to change the name to xerprn and to rework
+c           the handling of the new line sentinel to behave like the
+c           slash character in format statements.
+c   890706  revised with the help of fred fritsch and reg clemens to
+c           streamline the coding and fix a bug that caused extra blank
+c           lines to be printed.
+c   890721  revised to add a new feature.  a negative value of npref
+c           causes len(prefix) to be used as the length.
+c   891013  revised to correct error in calculating prefix length.
+c   891214  prologue converted to version 4.0 format.  (wrb)
+c   900510  added code to break messages between words.  (rwc)
+c   920501  reformatted the references section.  (wrb)
+c***end prologue  xerprn
+      character*(*) prefix, messg
+      integer npref, nwrap
+      character*148 cbuff
+      integer iu(5), nunit
+      character*2 newlin
+      parameter (newlin = '$$')
+c***first executable statement  xerprn
+      call xgetua(iu,nunit)
+c
+c       a zero value for a logical unit number means to use the standard
+c       error message unit instead.  i1mach(4) retrieves the standard
+c       error message unit.
+c
+      n = i1mach(4)
+      do 10 i=1,nunit
+         if (iu(i) .eq. 0) iu(i) = n
+   10 continue
+c
+c       lpref is the length of the prefix.  the prefix is placed at the
+c       beginning of cbuff, the character buffer, and kept there during
+c       the rest of this routine.
+c
+      if ( npref .lt. 0 ) then
+         lpref = len(prefix)
+      else
+         lpref = npref
+      endif
+      lpref = min(16, lpref)
+      if (lpref .ne. 0) cbuff(1:lpref) = prefix
+c
+c       lwrap is the maximum number of characters we want to take at one
+c       time from messg to print on one line.
+c
+      lwrap = max(16, min(132, nwrap))
+c
+c       set lenmsg to the length of messg, ignore any trailing blanks.
+c
+      lenmsg = len(messg)
+      n = lenmsg
+      do 20 i=1,n
+         if (messg(lenmsg:lenmsg) .ne. ' ') go to 30
+         lenmsg = lenmsg - 1
+   20 continue
+   30 continue
+c
+c       if the message is all blanks, then print one blank line.
+c
+      if (lenmsg .eq. 0) then
+         cbuff(lpref+1:lpref+1) = ' '
+         do 40 i=1,nunit
+            write(iu(i), '(a)') cbuff(1:lpref+1)
+   40    continue
+         return
+      endif
+c
+c       set nextc to the position in messg where the next substring
+c       starts.  from this position we scan for the new line sentinel.
+c       when nextc exceeds lenmsg, there is no more to print.
+c       we loop back to label 50 until all pieces have been printed.
+c
+c       we look for the next occurrence of the new line sentinel.  the
+c       index intrinsic function returns zero if there is no occurrence
+c       or if the length of the first argument is less than the length
+c       of the second argument.
+c
+c       there are several cases which should be checked for in the
+c       following order.  we are attempting to set lpiece to the number
+c       of characters that should be taken from messg starting at
+c       position nextc.
+c
+c       lpiece .eq. 0   the new line sentinel does not occur in the
+c                       remainder of the character string.  lpiece
+c                       should be set to lwrap or lenmsg+1-nextc,
+c                       whichever is less.
+c
+c       lpiece .eq. 1   the new line sentinel starts at messg(nextc:
+c                       nextc).  lpiece is effectively zero, and we
+c                       print nothing to avoid producing unnecessary
+c                       blank lines.  this takes care of the situation
+c                       where the library routine has a message of
+c                       exactly 72 characters followed by a new line
+c                       sentinel followed by more characters.  nextc
+c                       should be incremented by 2.
+c
+c       lpiece .gt. lwrap+1  reduce lpiece to lwrap.
+c
+c       else            this last case means 2 .le. lpiece .le. lwrap+1
+c                       reset lpiece = lpiece-1.  note that this
+c                       properly handles the end case where lpiece .eq.
+c                       lwrap+1.  that is, the sentinel falls exactly
+c                       at the end of a line.
+c
+      nextc = 1
+   50 lpiece = index(messg(nextc:lenmsg), newlin)
+      if (lpiece .eq. 0) then
+c
+c       there was no new line sentinel found.
+c
+         idelta = 0
+         lpiece = min(lwrap, lenmsg+1-nextc)
+         if (lpiece .lt. lenmsg+1-nextc) then
+            do 52 i=lpiece+1,2,-1
+               if (messg(nextc+i-1:nextc+i-1) .eq. ' ') then
+                  lpiece = i-1
+                  idelta = 1
+                  goto 54
+               endif
+   52       continue
+         endif
+   54    cbuff(lpref+1:lpref+lpiece) = messg(nextc:nextc+lpiece-1)
+         nextc = nextc + lpiece + idelta
+      elseif (lpiece .eq. 1) then
+c
+c       we have a new line sentinel at messg(nextc:nextc+1).
+c       don't print a blank line.
+c
+         nextc = nextc + 2
+         go to 50
+      elseif (lpiece .gt. lwrap+1) then
+c
+c       lpiece should be set down to lwrap.
+c
+         idelta = 0
+         lpiece = lwrap
+         do 56 i=lpiece+1,2,-1
+            if (messg(nextc+i-1:nextc+i-1) .eq. ' ') then
+               lpiece = i-1
+               idelta = 1
+               goto 58
+            endif
+   56    continue
+   58    cbuff(lpref+1:lpref+lpiece) = messg(nextc:nextc+lpiece-1)
+         nextc = nextc + lpiece + idelta
+      else
+c
+c       if we arrive here, it means 2 .le. lpiece .le. lwrap+1.
+c       we should decrement lpiece by one.
+c
+         lpiece = lpiece - 1
+         cbuff(lpref+1:lpref+lpiece) = messg(nextc:nextc+lpiece-1)
+         nextc  = nextc + lpiece + 2
+      endif
+c
+c       print
+c
+      do 60 i=1,nunit
+         write(iu(i), '(a)') cbuff(1:lpref+lpiece)
+   60 continue
+c
+      if (nextc .le. lenmsg) go to 50
+      return
+      end
+*deck xersve
+      subroutine xersve (librar, subrou, messg, kflag, nerr, level,
+     +   icount)
+c***begin prologue  xersve
+c***subsidiary
+c***purpose  record that an error has occurred.
+c***library   slatec (xerror)
+c***category  r3
+c***type      all (xersve-a)
+c***keywords  error, xerror
+c***author  jones, r. e., (snla)
+c***description
+c
+c *usage:
+c
+c        integer  kflag, nerr, level, icount
+c        character * (len) librar, subrou, messg
+c
+c        call xersve (librar, subrou, messg, kflag, nerr, level, icount)
+c
+c *arguments:
+c
+c        librar :in    is the library that the message is from.
+c        subrou :in    is the subroutine that the message is from.
+c        messg  :in    is the message to be saved.
+c        kflag  :in    indicates the action to be performed.
+c                      when kflag > 0, the message in messg is saved.
+c                      when kflag=0 the tables will be dumped and
+c                      cleared.
+c                      when kflag < 0, the tables will be dumped and
+c                      not cleared.
+c        nerr   :in    is the error number.
+c        level  :in    is the error severity.
+c        icount :out   the number of times this message has been seen,
+c                      or zero if the table has overflowed and does not
+c                      contain this message specifically.  when kflag=0,
+c                      icount will not be altered.
+c
+c *description:
+c
+c   record that this error occurred and possibly dump and clear the
+c   tables.
+c
+c***references  r. e. jones and d. k. kahaner, xerror, the slatec
+c                 error-handling package, sand82-0800, sandia
+c                 laboratories, 1982.
+c***routines called  i1mach, xgetua
+c***revision history  (yymmdd)
+c   800319  date written
+c   861211  revision date from version 3.2
+c   891214  prologue converted to version 4.0 format.  (bab)
+c   900413  routine modified to remove reference to kflag.  (wrb)
+c   900510  changed to add library name and subroutine to calling
+c           sequence, use if-then-else, make number of saved entries
+c           easily changeable, changed routine name from xersav to
+c           xersve.  (rwc)
+c   910626  added libtab and subtab to save statement.  (bks)
+c   920501  reformatted the references section.  (wrb)
+c***end prologue  xersve
+      parameter (lentab=10)
+      integer lun(5)
+      character*(*) librar, subrou, messg
+      character*8  libtab(lentab), subtab(lentab), lib, sub
+      character*20 mestab(lentab), mes
+      dimension nertab(lentab), levtab(lentab), kount(lentab)
+      save libtab, subtab, mestab, nertab, levtab, kount, kountx, nmsg
+      data kountx/0/, nmsg/0/
+c***first executable statement  xersve
+c
+      if (kflag.le.0) then
+c
+c        dump the table.
+c
+         if (nmsg.eq.0) return
+c
+c        print to each unit.
+c
+         call xgetua (lun, nunit)
+         do 20 kunit = 1,nunit
+            iunit = lun(kunit)
+            if (iunit.eq.0) iunit = i1mach(4)
+c
+c           print the table header.
+c
+            write (iunit,9000)
+c
+c           print body of table.
+c
+            do 10 i = 1,nmsg
+               write (iunit,9010) libtab(i), subtab(i), mestab(i),
+     *            nertab(i),levtab(i),kount(i)
+   10       continue
+c
+c           print number of other errors.
+c
+            if (kountx.ne.0) write (iunit,9020) kountx
+            write (iunit,9030)
+   20    continue
+c
+c        clear the error tables.
+c
+         if (kflag.eq.0) then
+            nmsg = 0
+            kountx = 0
+         endif
+      else
+c
+c        process a message...
+c        search for this messg, or else an empty slot for this messg,
+c        or else determine that the error table is full.
+c
+         lib = librar
+         sub = subrou
+         mes = messg
+         do 30 i = 1,nmsg
+            if (lib.eq.libtab(i) .and. sub.eq.subtab(i) .and.
+     *         mes.eq.mestab(i) .and. nerr.eq.nertab(i) .and.
+     *         level.eq.levtab(i)) then
+                  kount(i) = kount(i) + 1
+                  icount = kount(i)
+                  return
+            endif
+   30    continue
+c
+         if (nmsg.lt.lentab) then
+c
+c           empty slot found for new message.
+c
+            nmsg = nmsg + 1
+            libtab(i) = lib
+            subtab(i) = sub
+            mestab(i) = mes
+            nertab(i) = nerr
+            levtab(i) = level
+            kount (i) = 1
+            icount    = 1
+         else
+c
+c           table is full.
+c
+            kountx = kountx+1
+            icount = 0
+         endif
+      endif
+      return
+c
+c     formats.
+c
+ 9000 format ('0          error message summary' /
+     +   ' library    subroutine message start             nerr',
+     +   '     level     count')
+ 9010 format (1x,a,3x,a,3x,a,3i10)
+ 9020 format ('0other errors not individually tabulated = ', i10)
+ 9030 format (1x)
+      end
+*deck xgetua
+      subroutine xgetua (iunita, n)
+c***begin prologue  xgetua
+c***purpose  return unit number(s) to which error messages are being
+c            sent.
+c***library   slatec (xerror)
+c***category  r3c
+c***type      all (xgetua-a)
+c***keywords  error, xerror
+c***author  jones, r. e., (snla)
+c***description
+c
+c     abstract
+c        xgetua may be called to determine the unit number or numbers
+c        to which error messages are being sent.
+c        these unit numbers may have been set by a call to xsetun,
+c        or a call to xsetua, or may be a default value.
+c
+c     description of parameters
+c      --output--
+c        iunit - an array of one to five unit numbers, depending
+c                on the value of n.  a value of zero refers to the
+c                default unit, as defined by the i1mach machine
+c                constant routine.  only iunit(1),...,iunit(n) are
+c                defined by xgetua.  the values of iunit(n+1),...,
+c                iunit(5) are not defined (for n .lt. 5) or altered
+c                in any way by xgetua.
+c        n     - the number of units to which copies of the
+c                error messages are being sent.  n will be in the
+c                range from 1 to 5.
+c
+c***references  r. e. jones and d. k. kahaner, xerror, the slatec
+c                 error-handling package, sand82-0800, sandia
+c                 laboratories, 1982.
+c***routines called  j4save
+c***revision history  (yymmdd)
+c   790801  date written
+c   861211  revision date from version 3.2
+c   891214  prologue converted to version 4.0 format.  (bab)
+c   920501  reformatted the references section.  (wrb)
+c***end prologue  xgetua
+      dimension iunita(5)
+c***first executable statement  xgetua
+      n = j4save(5,0,.false.)
+      do 30 i=1,n
+         index = i+4
+         if (i.eq.1) index = 3
+         iunita(i) = j4save(index,0,.false.)
+   30 continue
+      return
+      end
+
+
+
+
+
+
+

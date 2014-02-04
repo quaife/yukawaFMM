@@ -52,6 +52,9 @@ c      real *8 xf(16,maxboxes),yf(16,maxboxes)
       real *8 work(maxrwrk)
 
 
+      call inittable
+c     Load and save precomputed tables that will be called
+c     later when forming all the expansions
 
 
       call formTree(levelbox,icolbox,irowbox,nboxes,nlev,
@@ -224,8 +227,9 @@ c***********************************************************************
       complex *16 zs(-3:3,-3:3,nnodesmax)
 
 
-c      complex *16 wint(nterms/4+1,10)
+      complex *16 wint(nterms/4+1,10)
       integer *4 i,j,info
+      integer *4 istart,iend
       real *8 A(10,16)
       real *8 xp(16),yp(16),thetaxy(16),rouxy(16)
 
@@ -234,7 +238,7 @@ c      complex *16 wint(nterms/4+1,10)
       scale(0) = 1.d0
       do i=1,nlev
         betascal(i) = betascal(i-1)/2.d0
-        scale(i) = scale(i)/2.d0
+        scale(i) = scale(i-1)/2.d0
       enddo
 
       do i = 1,nboxes
@@ -289,6 +293,21 @@ c     start of upward pass
           exps(j,i) = 0.d0
         enddo
       enddo
+c     initialize multipole, local, and plane-wave expansions to
+c     zero
+
+      do i = nlev,0,-1
+        istart  = istartlev(i)
+        iend = istart + nblevel(i) - 1
+        call yformmp_coef(1,nterms,scale,betascal,i,wint)
+        if (i .lt. nlev) then
+c          call ympmp_coef(1,nterms,scale,betascal,i+1,wint)
+        endif
+
+
+
+      enddo
+
 
 
 
